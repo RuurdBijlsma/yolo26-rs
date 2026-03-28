@@ -1,0 +1,16 @@
+[package]
+name = "object-detection-draft"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ort = "2.0.0-rc.12"
+image = "0.25"
+ndarray = "0.17.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rayon = "1.11.0"
+
+[features]
+default = ['load-dyanmic']
+load-dyanmic = ["ort/load-dynamic"]
