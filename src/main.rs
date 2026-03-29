@@ -24,7 +24,7 @@ fn main() -> Result<()> {
                 .map(|r| r.tag.clone())
                 .collect::<HashSet<_>>();
             println!(
-                "Image: {} ({:?}) - Objects: {:?}\n",
+                "Image: {} ({:?}) - Objects: {:?}",
                 path.file_name().unwrap().to_string_lossy(),
                 start.elapsed(),
                 tags

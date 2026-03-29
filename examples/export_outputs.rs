@@ -54,7 +54,7 @@ fn main() -> Result<()> {
         let path = entry?.path();
         if path.extension().map_or(false, |e| e == "jpg" || e == "png") {
             let file_name = path.file_name().unwrap().to_string_lossy().into_owned();
-            println!("Processing {}...", file_name);
+            println!("Processing {file_name}...");
 
             // Run prediction with fixed thresholds for consistency
             let results = predictor.predict(&path, 0.4, 0.7)?;
@@ -72,6 +72,6 @@ fn main() -> Result<()> {
     let json = serde_json::to_string_pretty(&all_results)?;
     fs::write(output_path, json)?;
 
-    println!("✅ Successfully exported results to {}", output_path);
+    println!("✅ Successfully exported results to {output_path}");
     Ok(())
 }

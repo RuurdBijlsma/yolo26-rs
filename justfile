@@ -1,33 +1,35 @@
 set windows-shell := ["powershell.exe", "-Command"]
+set export := true
+ORT_DYLIB_PATH := "C:/Apps/onnxruntime/lib/onnxruntime.dll"
 
-# Run all CI-equivalent checks: format check, clippy, and tests
+# --- Lints:
+
 check: fmt clippy test
 
-# Format the code using rustfmt
 fmt:
     cargo fmt --all
 
-# Run Clippy with the same strict flags used in CI
 clippy:
     cargo clippy --no-deps --all-features --tests --benches -- \
         -D clippy::all \
         -D clippy::pedantic \
         -D clippy::nursery
 
-# Run all tests including integration tests
-test:
-    cargo test --profile release
+# --- Misc:
 
-# Run benchmarks
-bench:
-    cargo bench --all-features
-
-# Clean build artifacts
 clean:
     cargo clean
 
-run:
-    cargo run --bin run_onnx_v2 --profile release
-
 setup:
     uv run py-yolo/export_onnx.py
+
+# --- Execution:
+
+test:
+    cargo test --profile release
+
+bench:
+    cargo bench
+
+run:
+    cargo run --bin run_onnx_v2 --profile release
