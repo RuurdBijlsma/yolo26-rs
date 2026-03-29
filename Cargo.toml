@@ -1,7 +1,13 @@
 [package]
 name = "object_detector"
+description = "Object detection using ORT and the yoloe-26-seg model. This model can detect multiple objects per image, each having a tag, pixel-level mask, and a boundingbox. It's pretrained, it has a vocabulary of 4000+ objects. "
 version = "0.1.0"
 edition = "2024"
+license = "AGPL-3"
+homepage = "https://github.com/RuurdBijlsma/object_detector-rs"
+repository = "https://github.com/RuurdBijlsma/object_detector-rs"
+documentation = "https://docs.rs/object_detector"
+exclude = ["assets", ".github", "TODO.md", "justfile"]
 
 [dependencies]
 ort = { version = "2.0.0-rc.12", features = ["ndarray"] }
