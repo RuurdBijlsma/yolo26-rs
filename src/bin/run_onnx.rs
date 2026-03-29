@@ -58,8 +58,7 @@ impl YOLO26Predictor {
         let w_pad = ((new_unpad_w as f32 / self.stride as f32).ceil() * self.stride as f32) as u32;
         let h_pad = ((new_unpad_h as f32 / self.stride as f32).ceil() * self.stride as f32) as u32;
 
-        // 4. Resize - FilterType::Triangle is the closest to OpenCV's INTER_LINEAR
-        let resized = img.resize_exact(new_unpad_w, new_unpad_h, FilterType::Triangle);
+        let resized = img.resize_exact(new_unpad_w, new_unpad_h, FilterType::CatmullRom);
 
         // 5. Create Gray Canvas (114)
         let mut canvas = ImageBuffer::from_pixel(w_pad, h_pad, Rgb([114, 114, 114]));
@@ -241,7 +240,7 @@ struct PreprocessMeta {
     tensor_shape: (u32, u32),
 }
 
-pub fn try2() -> Result<()> {
+pub fn main() -> Result<()> {
     let model_path = "assets/model/dynamic-onnx/yoloe-26l-seg-pf-dynamic-try-3.onnx";
     let vocab_path = "assets/model/dynamic-onnx/vocabulary-dynamic.json";
 

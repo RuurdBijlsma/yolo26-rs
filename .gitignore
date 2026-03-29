@@ -2,3 +2,4 @@
 .idea
 *.onnx
 *.onnx.data
+*debug*.jpg
