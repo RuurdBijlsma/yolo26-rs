@@ -1,9 +1,9 @@
-use std::collections::HashSet;
 use color_eyre::Result;
 use image::{DynamicImage, GenericImageView, ImageBuffer, Rgb, RgbImage, imageops::FilterType};
 use ndarray::{Array1, Array2, Array4, Axis, s};
 use ort::session::Session;
 use ort::value::Value;
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -51,6 +51,11 @@ impl YOLO26Predictor {
     }
 
     /// Replicates cv2.resize(interpolation=cv2.INTER_LINEAR) exactly.
+    /// Using fast_image_resize or image::resize has been tested with all resize algorithms
+    /// they all have an MSE of about 30 compared to opencv resize, and produce bad results with
+    /// this onnx model. Therefore, I had to exactly copy opencv resize implementation. The output
+    /// of this function has an MSE of 0.25 compared to python's opencv resize, which yolo 26 seems
+    /// to be trained on, and it is sensitive to changes in resize algo.
     fn naive_bilinear_opencv(img: &RgbImage, dst_w: u32, dst_h: u32) -> RgbImage {
         let (src_w, src_h) = img.dimensions();
         let scale_x = src_w as f32 / dst_w as f32;
@@ -270,12 +275,15 @@ fn main() -> Result<()> {
         if path.extension().map_or(false, |e| e == "jpg" || e == "png") {
             let start = std::time::Instant::now();
             let results = predictor.predict(&path, 0.4, 0.7)?;
-            let tags =
-                results.iter().map(|r| r.tag.clone()).collect::<HashSet<_>>();
+            let tags = results
+                .iter()
+                .map(|r| r.tag.clone())
+                .collect::<HashSet<_>>();
             println!(
                 "Image: {:?} ({:?}) - Objects: {:?}",
                 path.file_name().unwrap(),
-                start.elapsed(), tags
+                start.elapsed(),
+                tags
             );
         }
     }
