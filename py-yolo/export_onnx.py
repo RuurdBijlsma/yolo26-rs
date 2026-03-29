@@ -12,8 +12,8 @@ import json
 from ultralytics import YOLO
 
 MODEL_PATH = "yoloe-26l-seg-pf.pt"
-OUTPUT_ONNX = "assets/model/dynamic-onnx/yoloe-26l-seg-pf.onnx"
-OUTPUT_VOCAB = "assets/model/dynamic-onnx/vocabulary.json"
+OUTPUT_ONNX = "assets/model/yoloe-26l-seg-pf.onnx"
+OUTPUT_VOCAB = "assets/model/vocabulary.json"
 
 
 class YOLO26SegWrapper(torch.nn.Module):

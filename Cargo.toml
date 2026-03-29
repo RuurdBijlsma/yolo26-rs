@@ -1,5 +1,5 @@
 [package]
-name = "object-detection-draft"
+name = "object_detector"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,12 +7,32 @@ edition = "2024"
 ort = { version = "2.0.0-rc.12", features = ["ndarray"] }
 ndarray = "0.17.2"
 image = "0.25.10"
-serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 num_cpus = "1.17.0"
 color-eyre = "0.6.5"
-fast_image_resize = "6.0.0"
 
 [features]
-default = ['load-dyanmic']
-load-dyanmic = ["ort/load-dynamic"]
+default = ['load-dynamic']
+download-binaries = ["ort/download-binaries"]
+copy-dylibs = ["ort/copy-dylibs"]
+load-dynamic = ["ort/load-dynamic"]
+# ort execution providers
+cuda = ["ort/cuda"]
+tensorrt = ["ort/tensorrt"]
+nvrtx = ["ort/nvrtx"]
+xnnpack = ["ort/xnnpack"]
+webgpu = ["ort/webgpu"]
+directml = ["ort/directml"]
+coreml = ["ort/coreml"]
+migraphx = ["ort/migraphx"]
+openvino = ["ort/openvino"]
+onednn = ["ort/onednn"]
+qnn = ["ort/qnn"]
+cann = ["ort/cann"]
+nnapi = ["ort/nnapi"]
+tvm = ["ort/tvm"]
+acl = ["ort/acl"]
+armnn = ["ort/armnn"]
+vitis = ["ort/vitis"]
+rknpu = ["ort/rknpu"]
+azure = ["ort/azure"]
