@@ -1,0 +1,646 @@
+{
+  "cat.jpg": [
+    {
+      "tag": "American shorthair",
+      "score": 0.93326735,
+      "bbox": [
+        1936.8318,
+        151.23405,
+        3281.6692,
+        2586.0605
+      ],
+      "mask_stats": {
+        "width": 4608,
+        "height": 2592,
+        "active_pixels": 2854286
+      }
+    }
+  ],
+  "cinnamon.jpg": [
+    {
+      "tag": "baozi",
+      "score": 0.9480038,
+      "bbox": [
+        1852.2838,
+        1274.6421,
+        2993.9492,
+        2008.8217
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 2318922
+      }
+    },
+    {
+      "tag": "plate",
+      "score": 0.9432752,
+      "bbox": [
+        1300.2195,
+        1369.1641,
+        3339.7551,
+        2171.6292
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 3192868
+      }
+    },
+    {
+      "tag": "cup",
+      "score": 0.9383936,
+      "bbox": [
+        356.45386,
+        216.60565,
+        1345.3986,
+        1921.777
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 3045607
+      }
+    },
+    {
+      "tag": "keyboard",
+      "score": 0.70311767,
+      "bbox": [
+        8.0209255,
+        462.55096,
+        3967.1758,
+        1547.5476
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 3462639
+      }
+    },
+    {
+      "tag": "baozi",
+      "score": 0.64787817,
+      "bbox": [
+        1853.837,
+        1388.166,
+        2514.4963,
+        1798.3951
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 652462
+      }
+    },
+    {
+      "tag": "poppy",
+      "score": 0.40122995,
+      "bbox": [
+        1733.1146,
+        1402.5186,
+        1993.8284,
+        1607.4142
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 498510
+      }
+    }
+  ],
+  "food.jpg": [
+    {
+      "tag": "plate",
+      "score": 0.875269,
+      "bbox": [
+        755.19885,
+        378.55832,
+        3013.7874,
+        1927.4304
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 1269192
+      }
+    },
+    {
+      "tag": "salmon",
+      "score": 0.77942777,
+      "bbox": [
+        1513.1821,
+        1139.0762,
+        2667.123,
+        1731.4963
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 646268
+      }
+    },
+    {
+      "tag": "truffle",
+      "score": 0.69094175,
+      "bbox": [
+        2308.1426,
+        580.7736,
+        2780.2268,
+        1006.48
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 1159047
+      }
+    },
+    {
+      "tag": "type",
+      "score": 0.6260698,
+      "bbox": [
+        0.93078226,
+        -2.9268212,
+        1301.8809,
+        317.93097
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 516574
+      }
+    },
+    {
+      "tag": "dinning table",
+      "score": 0.54402095,
+      "bbox": [
+        43.245975,
+        -0.3324188,
+        4033.9436,
+        2289.5046
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 4405860
+      }
+    },
+    {
+      "tag": "keyboard",
+      "score": 0.5042609,
+      "bbox": [
+        -1.2170105,
+        -9.990349,
+        3050.3315,
+        956.39014
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 1436302
+      }
+    },
+    {
+      "tag": "comfort food",
+      "score": 0.43757,
+      "bbox": [
+        883.6172,
+        203.10318,
+        2814.198,
+        1728.6819
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 2048546
+      }
+    },
+    {
+      "tag": "kebab",
+      "score": 0.4175832,
+      "bbox": [
+        1116.4862,
+        758.5051,
+        1685.8646,
+        1249.7871
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 1257579
+      }
+    }
+  ],
+  "fridge.jpg": [
+    {
+      "tag": "honey",
+      "score": 0.8024751,
+      "bbox": [
+        785.701,
+        155.32329,
+        1310.3651,
+        1001.23486
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 3471429
+      }
+    },
+    {
+      "tag": "honey",
+      "score": 0.73105824,
+      "bbox": [
+        1551.0133,
+        1391.9923,
+        1998.0233,
+        2215.6487
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 3716531
+      }
+    },
+    {
+      "tag": "honey",
+      "score": 0.65708107,
+      "bbox": [
+        1580.6792,
+        255.24394,
+        1974.7136,
+        1013.2164
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 3481613
+      }
+    },
+    {
+      "tag": "jam",
+      "score": 0.58583575,
+      "bbox": [
+        2343.727,
+        1448.988,
+        2796.8503,
+        2205.556
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 3747719
+      }
+    },
+    {
+      "tag": "honey",
+      "score": 0.5818755,
+      "bbox": [
+        938.4854,
+        1399.0323,
+        1421.5859,
+        2203.0205
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 3588453
+      }
+    },
+    {
+      "tag": "honey",
+      "score": 0.5539099,
+      "bbox": [
+        1970.573,
+        100.509155,
+        2501.2708,
+        1006.6874
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 3560476
+      }
+    },
+    {
+      "tag": "jam",
+      "score": 0.5407217,
+      "bbox": [
+        1995.1812,
+        1488.1685,
+        2368.2598,
+        2215.4705
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 3846150
+      }
+    },
+    {
+      "tag": "jam",
+      "score": 0.5017079,
+      "bbox": [
+        2464.825,
+        271.5043,
+        2925.378,
+        1016.49866
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 3487346
+      }
+    },
+    {
+      "tag": "fridge",
+      "score": 0.47351813,
+      "bbox": [
+        63.729244,
+        6.5378265,
+        3285.929,
+        2332.0994
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 7548593
+      }
+    },
+    {
+      "tag": "jam",
+      "score": 0.41692126,
+      "bbox": [
+        404.75635,
+        1415.557,
+        891.2834,
+        2163.9155
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 3415563
+      }
+    }
+  ],
+  "plant.jpg": [
+    {
+      "tag": "basket",
+      "score": 0.70131886,
+      "bbox": [
+        150.6234,
+        544.3577,
+        2307.834,
+        2014.9271
+      ],
+      "mask_stats": {
+        "width": 2268,
+        "height": 4032,
+        "active_pixels": 1224985
+      }
+    },
+    {
+      "tag": "knife",
+      "score": 0.6062267,
+      "bbox": [
+        913.65515,
+        2467.5999,
+        2268.2524,
+        4033.5095
+      ],
+      "mask_stats": {
+        "width": 2268,
+        "height": 4032,
+        "active_pixels": 706179
+      }
+    },
+    {
+      "tag": "pitcher plant",
+      "score": 0.5887723,
+      "bbox": [
+        1289.3972,
+        1783.1249,
+        1982.6106,
+        2616.324
+      ],
+      "mask_stats": {
+        "width": 2268,
+        "height": 4032,
+        "active_pixels": 535074
+      }
+    },
+    {
+      "tag": "spring",
+      "score": 0.5532182,
+      "bbox": [
+        1001.0924,
+        -0.09689941,
+        2252.2515,
+        2632.484
+      ],
+      "mask_stats": {
+        "width": 2268,
+        "height": 4032,
+        "active_pixels": 1276725
+      }
+    },
+    {
+      "tag": "crosstalk",
+      "score": 0.53990394,
+      "bbox": [
+        1004.68713,
+        -12.232349,
+        1457.9789,
+        2140.335
+      ],
+      "mask_stats": {
+        "width": 2268,
+        "height": 4032,
+        "active_pixels": 597264
+      }
+    }
+  ],
+  "sup.jpg": [
+    {
+      "tag": "person",
+      "score": 0.8875126,
+      "bbox": [
+        1788.8523,
+        816.4237,
+        2060.705,
+        1592.5219
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 894789
+      }
+    },
+    {
+      "tag": "person",
+      "score": 0.7743478,
+      "bbox": [
+        1751.9368,
+        1946.1897,
+        2034.594,
+        2262.2588
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 924294
+      }
+    },
+    {
+      "tag": "boat",
+      "score": 0.755569,
+      "bbox": [
+        736.5043,
+        1528.3177,
+        2719.4177,
+        1720.1038
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 635598
+      }
+    },
+    {
+      "tag": "paddle",
+      "score": 0.75296515,
+      "bbox": [
+        1627.4207,
+        985.20575,
+        2187.4302,
+        1721.5452
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 335230
+      }
+    },
+    {
+      "tag": "autumn forest",
+      "score": 0.6239065,
+      "bbox": [
+        -0.8040344,
+        -8.90023,
+        4011.872,
+        1513.7782
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 8109079
+      }
+    },
+    {
+      "tag": "person",
+      "score": 0.547704,
+      "bbox": [
+        1751.1086,
+        1769.4663,
+        2037.0956,
+        2261.6597
+      ],
+      "mask_stats": {
+        "width": 4032,
+        "height": 2268,
+        "active_pixels": 813340
+      }
+    }
+  ],
+  "van.jpg": [
+    {
+      "tag": "car",
+      "score": 0.8000014,
+      "bbox": [
+        869.43256,
+        949.9168,
+        985.9917,
+        1034.1263
+      ],
+      "mask_stats": {
+        "width": 1944,
+        "height": 2592,
+        "active_pixels": 423062
+      }
+    },
+    {
+      "tag": "van",
+      "score": 0.72095764,
+      "bbox": [
+        199.33223,
+        887.4695,
+        835.95215,
+        1401.318
+      ],
+      "mask_stats": {
+        "width": 1944,
+        "height": 2592,
+        "active_pixels": 591148
+      }
+    },
+    {
+      "tag": "car",
+      "score": 0.5788007,
+      "bbox": [
+        1164.1934,
+        940.8418,
+        1244.2341,
+        983.7221
+      ],
+      "mask_stats": {
+        "width": 1944,
+        "height": 2592,
+        "active_pixels": 573321
+      }
+    },
+    {
+      "tag": "car",
+      "score": 0.5434285,
+      "bbox": [
+        1706.3896,
+        1054.5464,
+        1944.2433,
+        1970.7798
+      ],
+      "mask_stats": {
+        "width": 1944,
+        "height": 2592,
+        "active_pixels": 445065
+      }
+    },
+    {
+      "tag": "car",
+      "score": 0.5353208,
+      "bbox": [
+        168.2675,
+        944.79596,
+        234.52057,
+        1013.2004
+      ],
+      "mask_stats": {
+        "width": 1944,
+        "height": 2592,
+        "active_pixels": 577323
+      }
+    },
+    {
+      "tag": "shield",
+      "score": 0.49436402,
+      "bbox": [
+        1283.1049,
+        619.1886,
+        1503.6183,
+        844.2798
+      ],
+      "mask_stats": {
+        "width": 1944,
+        "height": 2592,
+        "active_pixels": 453081
+      }
+    }
+  ]
+}
