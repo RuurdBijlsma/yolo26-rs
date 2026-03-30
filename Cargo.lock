@@ -1298,6 +1298,7 @@ dependencies = [
  "ndarray",
  "num_cpus",
  "ort",
+ "rayon",
  "serde",
  "serde_json",
 ]

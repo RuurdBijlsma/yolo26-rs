@@ -133,24 +133,6 @@ fn benchmark_predict_components(c: &mut Criterion) {
         });
     }
 
-    // 6. store_results loop (after NMS)
-    c.bench_function("predict_step_6_store_results_loop", |b| {
-        b.iter(|| {
-            let mut results = Vec::new();
-            for idx in kept_indices.clone() {
-                let (bbox, score, class_id, weights) = &candidates[idx];
-                let x1 = ((bbox[0] - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32);
-                let y1 = ((bbox[1] - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32);
-                let x2 = ((bbox[2] - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32);
-                let y2 = ((bbox[3] - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32);
-                let final_bbox = [x1, y1, x2, y2];
-                let mask = YOLO26Predictor::process_mask(&protos_view, weights, &meta, &final_bbox);
-                results.push(black_box((final_bbox, *score, *class_id, mask)));
-            }
-            black_box(results);
-        });
-    });
-
     // 7. Full predict function
     c.bench_function("predict_full", |b| {
         b.iter(|| {

@@ -1,10 +1,11 @@
 use crate::predictor::custom_resize::naive_bilinear_opencv;
 use crate::predictor::nms::non_maximum_suppression;
 use color_eyre::Result;
-use image::{DynamicImage, GenericImageView, ImageBuffer, Rgb, imageops::FilterType};
-use ndarray::{Array1, Array2, Array4, Axis, s};
+use image::{DynamicImage, GenericImageView, ImageBuffer, Rgb};
+use ndarray::{s, Array1, Array2, Array4};
 use ort::session::Session;
 use ort::value::Value;
+use rayon::prelude::*;
 use std::fs;
 use std::path::Path;
 
@@ -34,10 +35,8 @@ pub struct YOLO26Predictor {
 impl YOLO26Predictor {
     pub fn new(model_path: impl AsRef<Path>, vocab_path: impl AsRef<Path>) -> Result<Self> {
         let session = Session::builder()?
-            .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
-            .unwrap()
-            .with_intra_threads(num_cpus::get())
-            .unwrap()
+            .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3).unwrap()
+            .with_intra_threads(num_cpus::get()).unwrap()
             .commit_from_file(model_path)?;
 
         let vocab_file = fs::read_to_string(vocab_path)?;
@@ -66,13 +65,17 @@ impl YOLO26Predictor {
         let mut canvas = ImageBuffer::from_pixel(w_pad, h_pad, Rgb([114, 114, 114]));
         let left = (w_pad - new_unpad_w) / 2;
         let top = (h_pad - new_unpad_h) / 2;
-        image::imageops::overlay(&mut canvas, &resized, left as i64, top as i64);
+        image::imageops::overlay(&mut canvas, &resized, i64::from(left), i64::from(top));
 
         let mut input = Array4::zeros((1, 3, h_pad as usize, w_pad as usize));
-        for (x, y, rgb) in canvas.enumerate_pixels() {
-            input[[0, 0, y as usize, x as usize]] = (rgb[0] as f32) / 255.0;
-            input[[0, 1, y as usize, x as usize]] = (rgb[1] as f32) / 255.0;
-            input[[0, 2, y as usize, x as usize]] = (rgb[2] as f32) / 255.0;
+        let flat_raw = canvas.as_raw();
+        let channel_size = (h_pad * w_pad) as usize;
+
+        let data = input.as_slice_mut().unwrap();
+        for (i, rgb) in flat_raw.chunks_exact(3).enumerate() {
+            data[i] = f32::from(rgb[0]) / 255.0;
+            data[i + channel_size] = f32::from(rgb[1]) / 255.0;
+            data[i + 2 * channel_size] = f32::from(rgb[2]) / 255.0;
         }
 
         (
@@ -86,53 +89,78 @@ impl YOLO26Predictor {
         )
     }
 
-    #[must_use]
     pub fn process_mask(
         protos: &ndarray::ArrayView3<f32>,
         weights: &Array1<f32>,
         meta: &PreprocessMeta,
         bbox: &[f32; 4],
     ) -> Array2<bool> {
-        let (c, h, w) = protos.dim();
-        let mut mask_flat = Array2::<f32>::zeros((h, w));
-        for i in 0..c {
-            mask_flat += &(protos.index_axis(Axis(0), i).to_owned() * weights[i]);
+        let (mask_c, mask_h, mask_w) = protos.dim();
+
+        // 1. Compute the raw mask (logits) at the prototype resolution (usually 160x160)
+        // This is a single matrix-vector multiplication.
+        let protos_flat = protos.view().into_shape_with_order((mask_c, mask_h * mask_w)).unwrap();
+        let mask_logits_flat = weights.dot(&protos_flat);
+        let mask_logits = mask_logits_flat.to_shape((mask_h, mask_w)).unwrap();
+
+        let [x1, y1, x2, y2] = *bbox;
+        let img_w = meta.orig_shape.0 as usize;
+        let img_h = meta.orig_shape.1 as usize;
+
+        // 2. Pre-calculate coordinate transformation constants
+        // We need to map (x_img, y_img) -> (x_tensor) -> (x_mask_proto)
+        let gain = meta.ratio;
+        let (pad_x, pad_y) = meta.pad;
+
+        // Scaling factor from original image pixels to mask prototype pixels
+        // mask_proto is usually 1/4 of the tensor size (e.g. 160 vs 640)
+        let x_map_factor = gain * (mask_w as f32 / meta.tensor_shape.0 as f32);
+        let y_map_factor = gain * (mask_h as f32 / meta.tensor_shape.1 as f32);
+        let x_offset = pad_x * (mask_w as f32 / meta.tensor_shape.0 as f32);
+        let y_offset = pad_y * (mask_h as f32 / meta.tensor_shape.1 as f32);
+
+        // 3. Generate the boolean mask only for the bounding box area
+        // We initialize with false and only fill the BBox rectangle.
+        let mut final_mask = Array2::from_elem((img_h, img_w), false);
+
+        let ix1 = (x1.floor() as usize).clamp(0, img_w);
+        let iy1 = (y1.floor() as usize).clamp(0, img_h);
+        let ix2 = (x2.ceil() as usize).clamp(0, img_w);
+        let iy2 = (y2.ceil() as usize).clamp(0, img_h);
+
+        for y in iy1..iy2 {
+            // Map image y to mask prototype y
+            let my = (y as f32).mul_add(y_map_factor, y_offset);
+            if my < 0.0 || my >= (mask_h as f32 - 1.0) { continue; }
+
+            let my_f = my.floor() as usize;
+            let my_c = (my_f + 1).min(mask_h - 1);
+            let dy = my - my_f as f32;
+
+            for x in ix1..ix2 {
+                let mx = (x as f32).mul_add(x_map_factor, x_offset);
+                if mx < 0.0 || mx >= (mask_w as f32 - 1.0) { continue; }
+
+                let mx_f = mx.floor() as usize;
+                let mx_c = (mx_f + 1).min(mask_w - 1);
+                let dx = mx - mx_f as f32;
+
+                // Bilinear sampling of the logit
+                let val = (1.0 - dx).mul_add(
+                    (1.0 - dy).mul_add(mask_logits[[my_f, mx_f]], dy * mask_logits[[my_c, mx_f]]),
+                    dx * (1.0 - dy).mul_add(mask_logits[[my_f, mx_c]], dy * mask_logits[[my_c, mx_c]])
+                );
+
+                // Sigmoid(val) > 0.5  is equivalent to  val > 0.0
+                if val > 0.0 {
+                    final_mask[[y, x]] = true;
+                }
+            }
         }
 
-        let mask_sigmoid = mask_flat.mapv(|x| 1.0 / (1.0 + (-x).exp()));
-        let mask_img = ImageBuffer::from_fn(w as u32, h as u32, |x, y| {
-            image::Luma([(mask_sigmoid[[y as usize, x as usize]] * 255.0) as u8])
-        });
-
-        // Upscale to the padded tensor size
-        let upscaled = DynamicImage::ImageLuma8(mask_img).resize_exact(
-            meta.tensor_shape.0,
-            meta.tensor_shape.1,
-            FilterType::Triangle,
-        );
-
-        // Crop the padding out to get to the "unpadded" resized image
-        let crop_w = (meta.orig_shape.0 as f32 * meta.ratio).round() as u32;
-        let crop_h = (meta.orig_shape.1 as f32 * meta.ratio).round() as u32;
-
-        let final_mask = upscaled
-            .crop_imm(meta.pad.0 as u32, meta.pad.1 as u32, crop_w, crop_h)
-            .resize_exact(meta.orig_shape.0, meta.orig_shape.1, FilterType::Triangle)
-            .to_luma8();
-
-        // Create the boolean mask AND apply the bounding box constraint
-        let [x1, y1, x2, y2] = *bbox;
-
-        Array2::from_shape_fn(
-            (meta.orig_shape.1 as usize, meta.orig_shape.0 as usize),
-            |(y, x)| {
-                let val = final_mask.get_pixel(x as u32, y as u32)[0];
-                let is_in_box =
-                    x as f32 >= x1 && x as f32 <= x2 && y as f32 >= y1 && y as f32 <= y2;
-                val > 127 && is_in_box // Only true if sigmoid > 0.5 AND inside BBox
-            },
-        )
+        final_mask
     }
+
 
     pub fn predict(
         &mut self,
@@ -173,30 +201,32 @@ impl YOLO26Predictor {
 
         let kept_indices = non_maximum_suppression(&candidates, iou);
 
-        let mut results = Vec::new();
-        for idx in kept_indices {
-            let (bbox, score, class_id, weights) = &candidates[idx];
+        let results: Vec<Detection> = kept_indices
+            .into_par_iter()
+            .map(|idx| {
+                let (bbox, score, class_id, weights) = &candidates[idx];
 
-            let x1 = ((bbox[0] - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32);
-            let y1 = ((bbox[1] - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32);
-            let x2 = ((bbox[2] - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32);
-            let y2 = ((bbox[3] - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32);
+                let x1 = ((bbox[0] - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32);
+                let y1 = ((bbox[1] - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32);
+                let x2 = ((bbox[2] - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32);
+                let y2 = ((bbox[3] - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32);
 
-            let final_bbox = [x1, y1, x2, y2];
-            let mask = Self::process_mask(&protos_view, weights, &meta, &final_bbox);
+                let final_bbox = [x1, y1, x2, y2];
+                let mask = Self::process_mask(&protos_view, weights, &meta, &final_bbox);
 
-            results.push(Detection {
-                bbox: final_bbox,
-                score: *score,
-                class_id: *class_id,
-                tag: self
-                    .vocab
-                    .get(*class_id)
-                    .cloned()
-                    .unwrap_or_else(|| "unknown".into()),
-                mask: Some(mask),
-            });
-        }
+                Detection {
+                    bbox: final_bbox,
+                    score: *score,
+                    class_id: *class_id,
+                    tag: self
+                        .vocab
+                        .get(*class_id)
+                        .cloned()
+                        .unwrap_or_else(|| "unknown".into()),
+                    mask: Some(mask),
+                }
+            })
+            .collect();
 
         Ok(results)
     }
