@@ -15,14 +15,6 @@ fn benchmark_predict_components(c: &mut Criterion) {
         YOLO26Predictor::new(model_path, vocab_path).expect("Failed to create predictor");
     let img = image::open(img_path).expect("Failed to open image");
 
-    // 1. image::open
-    c.bench_function("predict_step_1_image_open", |b| {
-        b.iter(|| {
-            let img = image::open(black_box(img_path)).unwrap();
-            black_box(img);
-        });
-    });
-
     // 2. preprocess
     c.bench_function("predict_step_2_preprocess", |b| {
         b.iter(|| {

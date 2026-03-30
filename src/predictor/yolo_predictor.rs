@@ -1,7 +1,7 @@
 use crate::predictor::nms::non_maximum_suppression;
 use color_eyre::Result;
 use image::{DynamicImage, GenericImageView};
-use ndarray::{s, Array1, Array2, Array4};
+use ndarray::{s, Array1, Array2, Array4, Axis}; // Added Axis
 use ort::session::Session;
 use ort::value::Value;
 use rayon::prelude::*;
@@ -9,7 +9,6 @@ use std::fs;
 use std::path::Path;
 
 /// A bit-packed mask to save memory (1 bit per pixel).
-/// Reduces memory footprint by 8x compared to Vec<bool>.
 #[derive(Debug, Clone)]
 pub struct Mask {
     pub width: u32,
@@ -26,7 +25,6 @@ impl Mask {
         (self.data[byte_idx] & (1 << bit_offset)) != 0
     }
 
-    /// Converts back to Array2<bool> if needed for compatibility.
     #[must_use]
     pub fn to_array2(&self) -> Array2<bool> {
         let mut arr = Array2::from_elem((self.height as usize, self.width as usize), false);
@@ -57,19 +55,6 @@ pub struct PreprocessMeta {
     pub tensor_shape: (u32, u32),
 }
 
-/// Helper to wrap raw pointer for parallel tensor filling.
-#[derive(Copy, Clone)]
-struct SendPtr(*mut f32);
-unsafe impl Send for SendPtr {}
-unsafe impl Sync for SendPtr {}
-
-impl SendPtr {
-    #[inline]
-    unsafe fn write(&self, offset: usize, val: f32) {
-        *self.0.add(offset) = val;
-    }
-}
-
 pub struct YOLO26Predictor {
     pub session: Session,
     pub vocab: Vec<String>,
@@ -95,8 +80,6 @@ impl YOLO26Predictor {
         })
     }
 
-    /// Optimized One-Pass Preprocessing.
-    /// Resizes, Pads, Normalizes, and Transposes (HWC -> CHW) in a single parallel pass.
     #[must_use]
     pub fn preprocess(&self, img: &DynamicImage) -> (Array4<f32>, PreprocessMeta) {
         let (w0, h0) = img.dimensions();
@@ -119,60 +102,62 @@ impl YOLO26Predictor {
 
         let scale_x = src_w as f32 / new_unpad_w as f32;
         let scale_y = src_h as f32 / new_unpad_h as f32;
-        let channel_size = (h_pad * w_pad) as usize;
 
-        // Wrap the raw pointer to allow sharing across Rayon threads
-        let data_ptr = SendPtr(input.as_slice_mut().unwrap().as_mut_ptr());
+        // Get a mutable view of the "content area" inside the padded tensor.
+        // Shape: (1, channels, new_unpad_h, new_unpad_w)
+        let mut content_view = input.slice_mut(s![
+            0,
+            ..,
+            top as usize..(top + new_unpad_h) as usize,
+            left as usize..(left + new_unpad_w) as usize
+        ]);
 
-        // Parallelize over the rows of the image content area
-        (0..new_unpad_h).into_par_iter().for_each(move |y| {
-            let source_y = (y as f32 + 0.5).mul_add(scale_y, -0.5);
-            let y1 = source_y.floor() as i32;
-            let dy = source_y - y1 as f32;
-            let y1_u = y1.clamp(0, src_h as i32 - 1) as u32;
-            let y2_u = (y1 + 1).clamp(0, src_h as i32 - 1) as u32;
-            let inv_dy = 1.0 - dy;
+        // Parallelize over rows (Axis 1 is Height in our (3, H, W) subview)
+        content_view
+            .axis_iter_mut(Axis(1))
+            .into_iter()
+            .enumerate()
+            .par_bridge()
+            .for_each(|(y, mut row_channels)| {
+                let source_y = (y as f32 + 0.5).mul_add(scale_y, -0.5);
+                let y1 = source_y.floor() as i32;
+                let dy = source_y - y1 as f32;
+                let y1_u = y1.clamp(0, src_h as i32 - 1) as u32;
+                let y2_u = (y1 + 1).clamp(0, src_h as i32 - 1) as u32;
+                let inv_dy = 1.0 - dy;
 
-            let out_row_offset = (y + top) as usize * w_pad as usize + left as usize;
+                for x in 0..new_unpad_w {
+                    let source_x = (x as f32 + 0.5).mul_add(scale_x, -0.5);
+                    let x1 = source_x.floor() as i32;
+                    let dx = source_x - x1 as f32;
+                    let x1_u = x1.clamp(0, src_w as i32 - 1) as u32;
+                    let x2_u = (x1 + 1).clamp(0, src_w as i32 - 1) as u32;
+                    let inv_dx = 1.0 - dx;
 
-            for x in 0..new_unpad_w {
-                let source_x = (x as f32 + 0.5).mul_add(scale_x, -0.5);
-                let x1 = source_x.floor() as i32;
-                let dx = source_x - x1 as f32;
-                let x1_u = x1.clamp(0, src_w as i32 - 1) as u32;
-                let x2_u = (x1 + 1).clamp(0, src_w as i32 - 1) as u32;
-                let inv_dx = 1.0 - dx;
+                    let get_pix = |px: u32, py: u32| {
+                        let idx = (py * src_w + px) as usize * 3;
+                        [src_raw[idx], src_raw[idx + 1], src_raw[idx + 2]]
+                    };
 
-                // Indexing for OpenCV-style bilinear sampling
-                let get_pix = |px: u32, py: u32| {
-                    let idx = (py * src_w + px) as usize * 3;
-                    [src_raw[idx], src_raw[idx+1], src_raw[idx+2]]
-                };
+                    let p11 = get_pix(x1_u, y1_u);
+                    let p21 = get_pix(x2_u, y1_u);
+                    let p12 = get_pix(x1_u, y2_u);
+                    let p22 = get_pix(x2_u, y2_u);
 
-                let p11 = get_pix(x1_u, y1_u);
-                let p21 = get_pix(x2_u, y1_u);
-                let p12 = get_pix(x1_u, y2_u);
-                let p22 = get_pix(x2_u, y2_u);
-
-                let out_idx = out_row_offset + x as usize;
-
-                for c in 0..3 {
-                    let val = (f32::from(p22[c]) * dx).mul_add(
-                        dy,
-                        (f32::from(p12[c]) * inv_dx).mul_add(
+                    for c in 0..3 {
+                        let val = (f32::from(p22[c]) * dx).mul_add(
                             dy,
-                            (f32::from(p11[c]) * inv_dx)
-                                .mul_add(inv_dy, f32::from(p21[c]) * dx * inv_dy),
-                        ),
-                    );
-
-                    // Direct write to the CHW tensor
-                    unsafe {
-                        data_ptr.write(out_idx + c * channel_size, (val + 0.5).floor() / 255.0);
+                            (f32::from(p12[c]) * inv_dx).mul_add(
+                                dy,
+                                (f32::from(p11[c]) * inv_dx)
+                                    .mul_add(inv_dy, f32::from(p21[c]) * dx * inv_dy),
+                            ),
+                        );
+                        // Safe assignment to the specific channel/x location in this row
+                        row_channels[[c, x as usize]] = (val + 0.5).floor() / 255.0;
                     }
                 }
-            }
-        });
+            });
 
         (
             input,
@@ -185,8 +170,6 @@ impl YOLO26Predictor {
         )
     }
 
-    /// Optimized Mask Generation.
-    /// Uses pre-calculated X-mappings and bit-packing for performance.
     pub fn process_mask(
         protos: &ndarray::ArrayView3<f32>,
         weights: &Array1<f32>,
@@ -194,7 +177,10 @@ impl YOLO26Predictor {
         bbox: &[f32; 4],
     ) -> Mask {
         let (mask_c, mask_h, mask_w) = protos.dim();
-        let protos_flat = protos.view().into_shape_with_order((mask_c, mask_h * mask_w)).unwrap();
+        let protos_flat = protos
+            .view()
+            .into_shape_with_order((mask_c, mask_h * mask_w))
+            .unwrap();
         let mask_logits_flat = weights.dot(&protos_flat);
         let mask_logits = mask_logits_flat.to_shape((mask_h, mask_w)).unwrap();
 
@@ -211,20 +197,23 @@ impl YOLO26Predictor {
         let ix2 = (x2.ceil() as u32).clamp(0, img_w);
         let iy2 = (y2.ceil() as u32).clamp(0, img_h);
 
-        // Pre-calculate X mappings for the width of the bbox
-        let x_coords: Vec<_> = (ix1..ix2).map(|x| {
-            let mx = (x as f32).mul_add(x_map_factor, x_offset);
-            let mx_f = mx.floor() as usize;
-            let mx_c = (mx_f + 1).min(mask_w - 1);
-            let dx = mx - mx_f as f32;
-            (mx_f, mx_c, dx)
-        }).collect();
+        let x_coords: Vec<_> = (ix1..ix2)
+            .map(|x| {
+                let mx = (x as f32).mul_add(x_map_factor, x_offset);
+                let mx_f = mx.floor() as usize;
+                let mx_c = (mx_f + 1).min(mask_w - 1);
+                let dx = mx - mx_f as f32;
+                (mx_f, mx_c, dx)
+            })
+            .collect();
 
         let mut data = vec![0u8; (img_w as usize * img_h as usize + 7) / 8];
 
         for y in iy1..iy2 {
             let my = (y as f32).mul_add(y_map_factor, y_offset);
-            if my < 0.0 || my >= (mask_h as f32 - 1.0) { continue; }
+            if my < 0.0 || my >= (mask_h as f32 - 1.0) {
+                continue;
+            }
 
             let my_f = my.floor() as usize;
             let my_c = (my_f + 1).min(mask_h - 1);
@@ -237,13 +226,11 @@ impl YOLO26Predictor {
                 let x = ix1 as usize + i;
                 let inv_dx = 1.0 - dx;
 
-                // Bilinear sample the logit
                 let val = inv_dx.mul_add(
                     inv_dy.mul_add(mask_logits[[my_f, mx_f]], dy * mask_logits[[my_c, mx_f]]),
-                    dx * inv_dy.mul_add(mask_logits[[my_f, mx_c]], dy * mask_logits[[my_c, mx_c]])
+                    dx * inv_dy.mul_add(mask_logits[[my_f, mx_c]], dy * mask_logits[[my_c, mx_c]]),
                 );
 
-                // threshold 0.0 is equivalent to Sigmoid(x) > 0.5
                 if val > 0.0 {
                     let bit_idx = row_base + x;
                     data[bit_idx >> 3] |= 1 << (bit_idx & 7);
@@ -251,15 +238,14 @@ impl YOLO26Predictor {
             }
         }
 
-        Mask { width: img_w, height: img_h, data }
+        Mask {
+            width: img_w,
+            height: img_h,
+            data,
+        }
     }
 
-    pub fn predict(
-        &mut self,
-        img: &DynamicImage,
-        conf: f32,
-        iou: f32,
-    ) -> Result<Vec<Detection>> {
+    pub fn predict(&mut self, img: &DynamicImage, conf: f32, iou: f32) -> Result<Vec<Detection>> {
         let (input_tensor, meta) = self.preprocess(img);
 
         let (preds, protos) = {
