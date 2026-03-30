@@ -86,6 +86,7 @@ impl YOLO26Predictor {
         )
     }
 
+    #[must_use]
     pub fn process_mask(
         protos: &ndarray::ArrayView3<f32>,
         weights: &Array1<f32>,

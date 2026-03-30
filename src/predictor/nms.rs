@@ -1,5 +1,6 @@
 use ndarray::Array1;
 
+#[must_use] 
 pub fn non_maximum_suppression(
     candidates: &[([f32; 4], f32, usize, Array1<f32>)],
     iou_thresh: f32,
@@ -19,6 +20,7 @@ pub fn non_maximum_suppression(
     kept
 }
 
+#[must_use] 
 pub fn calculate_intersection_over_union(b1: &[f32; 4], b2: &[f32; 4]) -> f32 {
     let x1 = b1[0].max(b2[0]);
     let y1 = b1[1].max(b2[1]);
