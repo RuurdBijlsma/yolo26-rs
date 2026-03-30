@@ -13,19 +13,25 @@ exclude = ["assets", ".github", "TODO.md", "justfile"]
 ort = { version = "2.0.0-rc.12", features = ["ndarray"] }
 ndarray = "0.17.2"
 image = "0.25.10"
-serde_json = "1.0"
+serde_json = "1.0.149"
 num_cpus = "1.17.0"
 color-eyre = "0.6.5"
 rayon = "1.11.0"
+hf-hub = { version = "0.5.0", features = ["tokio"], optional = true }
+serde = { version = "1.0.228", optional = true, features = ["derive"] }
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }
 criterion = { version = "0.8.2", features = ["html_reports"] }
 imageproc = "0.26.1"
 ab_glyph = "0.2"
+tokio = { version = "1.50", features = ["rt", "macros"] }
 
 [features]
-default = ["download-binaries", "copy-dylibs"]
+default = ["download-binaries", "copy-dylibs", "hf-hub", "serde"]
+serde = ["dep:serde"]
+hf-hub = ["dep:hf-hub"] # -> Enable downloading models from HuggingFace, relies on `tokio`
+# ort forwarded
 download-binaries = ["ort/download-binaries"]
 copy-dylibs = ["ort/copy-dylibs"]
 load-dynamic = ["ort/load-dynamic"]

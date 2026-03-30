@@ -1,7 +1,8 @@
+use crate::model_manager::{HfModel, get_hf_model};
 use crate::predictor::nms::non_maximum_suppression;
 use color_eyre::Result;
 use image::{DynamicImage, GenericImageView};
-use ndarray::{s, Array1, Array2, Array4, Axis}; // Added Axis
+use ndarray::{Array1, Array2, Array4, Axis, s};
 use ort::session::Session;
 use ort::value::Value;
 use rayon::prelude::*;
@@ -62,10 +63,20 @@ pub struct YOLO26Predictor {
 }
 
 impl YOLO26Predictor {
+    pub async fn from_hf() -> Result<Self> {
+        let model_path = get_hf_model(HfModel::default_model()).await?;
+        get_hf_model(HfModel::default_data()).await?;
+        let vocabulary_path = get_hf_model(HfModel::default_vocabulary()).await?;
+
+        Self::new(model_path, vocabulary_path)
+    }
+
     pub fn new(model_path: impl AsRef<Path>, vocab_path: impl AsRef<Path>) -> Result<Self> {
         let session = Session::builder()?
-            .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3).unwrap()
-            .with_intra_threads(num_cpus::get()).unwrap()
+            .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
+            .unwrap()
+            .with_intra_threads(num_cpus::get())
+            .unwrap()
             .commit_from_file(model_path)?;
 
         let vocab_file = fs::read_to_string(vocab_path)?;

@@ -9,4 +9,6 @@
 )]
 
 pub mod predictor;
+pub mod model_manager;
+
 pub use predictor::{Detection, Mask, PreprocessMeta, YOLO26Predictor};

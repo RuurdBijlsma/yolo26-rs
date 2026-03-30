@@ -3,12 +3,10 @@ use object_detector::YOLO26Predictor;
 use std::collections::HashSet;
 use std::path::Path;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     color_eyre::install()?;
-    let mut predictor = YOLO26Predictor::new(
-        "assets/model/yoloe-26l-seg-pf.onnx",
-        "assets/model/vocabulary.json",
-    )?;
+    let mut predictor = YOLO26Predictor::from_hf().await?;
 
     let image = Path::new("assets/img/market.jpg");
     let img = image::open(image)?;
