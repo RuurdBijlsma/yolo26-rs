@@ -1,9 +1,14 @@
-use std::hint::black_box;
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
+)]
 use criterion::{Criterion, criterion_group, criterion_main};
 use ndarray::s;
 use object_detector::predictor::nms::non_maximum_suppression;
 use object_detector::predictor::yolo_predictor::YOLO26Predictor;
 use ort::value::Value;
+use std::hint::black_box;
 
 #[allow(clippy::too_many_lines)]
 fn benchmark_predict_components(c: &mut Criterion) {

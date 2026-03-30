@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_lines, clippy::cast_precision_loss)]
+
 #[cfg(test)]
 mod tests {
     use color_eyre::eyre::Result;
@@ -130,10 +132,10 @@ mod tests {
                     }
                     (None, None) => {}
                     (Some(_), None) => {
-                        errors.push(format!("[{det_id}] Got a mask but none was expected"))
+                        errors.push(format!("[{det_id}] Got a mask but none was expected"));
                     }
                     (None, Some(_)) => {
-                        errors.push(format!("[{det_id}] Expected a mask but got none"))
+                        errors.push(format!("[{det_id}] Expected a mask but got none"));
                     }
                 }
             }

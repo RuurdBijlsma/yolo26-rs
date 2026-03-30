@@ -1,4 +1,12 @@
-#![allow(clippy::missing_panics_doc, clippy::missing_errors_doc)]
+#![allow(
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
+    clippy::cast_precision_loss,
+    clippy::similar_names,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+)]
 
 pub mod predictor;
-pub use predictor::{Detection, PreprocessMeta, YOLO26Predictor, Mask};
+pub use predictor::{Detection, Mask, PreprocessMeta, YOLO26Predictor};

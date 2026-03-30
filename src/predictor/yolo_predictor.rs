@@ -114,7 +114,6 @@ impl YOLO26Predictor {
         // Parallelize over rows (Axis 1 is Height in our (3, H, W) subview)
         content_view
             .axis_iter_mut(Axis(1))
-            .into_iter()
             .enumerate()
             .par_bridge()
             .for_each(|(y, mut row_channels)| {
@@ -123,7 +122,7 @@ impl YOLO26Predictor {
                 let dy = source_y - y1 as f32;
                 let y1_u = y1.clamp(0, src_h as i32 - 1) as u32;
                 let y2_u = (y1 + 1).clamp(0, src_h as i32 - 1) as u32;
-                let inv_dy = 1.0 - dy;
+                let inv_delta_y = 1.0 - dy;
 
                 for x in 0..new_unpad_w {
                     let source_x = (x as f32 + 0.5).mul_add(scale_x, -0.5);
@@ -131,7 +130,7 @@ impl YOLO26Predictor {
                     let dx = source_x - x1 as f32;
                     let x1_u = x1.clamp(0, src_w as i32 - 1) as u32;
                     let x2_u = (x1 + 1).clamp(0, src_w as i32 - 1) as u32;
-                    let inv_dx = 1.0 - dx;
+                    let inv_delta_x = 1.0 - dx;
 
                     let get_pix = |px: u32, py: u32| {
                         let idx = (py * src_w + px) as usize * 3;
@@ -146,10 +145,10 @@ impl YOLO26Predictor {
                     for c in 0..3 {
                         let val = (f32::from(p22[c]) * dx).mul_add(
                             dy,
-                            (f32::from(p12[c]) * inv_dx).mul_add(
+                            (f32::from(p12[c]) * inv_delta_x).mul_add(
                                 dy,
-                                (f32::from(p11[c]) * inv_dx)
-                                    .mul_add(inv_dy, f32::from(p21[c]) * dx * inv_dy),
+                                (f32::from(p11[c]) * inv_delta_x)
+                                    .mul_add(inv_delta_y, f32::from(p21[c]) * dx * inv_delta_y),
                             ),
                         );
                         // Safe assignment to the specific channel/x location in this row
@@ -169,6 +168,7 @@ impl YOLO26Predictor {
         )
     }
 
+    #[must_use]
     pub fn process_mask(
         protos: &ndarray::ArrayView3<f32>,
         weights: &Array1<f32>,
@@ -206,7 +206,7 @@ impl YOLO26Predictor {
             })
             .collect();
 
-        let mut data = vec![0u8; (img_w as usize * img_h as usize + 7) / 8];
+        let mut data = vec![0u8; (img_w as usize * img_h as usize).div_ceil(8)];
 
         for y in iy1..iy2 {
             let my = (y as f32).mul_add(y_map_factor, y_offset);

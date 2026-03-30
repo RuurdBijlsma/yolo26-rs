@@ -40,8 +40,6 @@ fn main() -> Result<()> {
         let mut results = predictor.predict(&img, 0.4, 0.5)?;
 
         // --- SORT BY AREA DESCENDING ---
-        // This ensures large masks (Fridge) are drawn first,
-        // and small masks (Honey/Jam) are drawn over them.
         results.sort_by(|a, b| {
             let area_a = (a.bbox[2] - a.bbox[0]) * (a.bbox[3] - a.bbox[1]);
             let area_b = (b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1]);
@@ -94,6 +92,8 @@ fn main() -> Result<()> {
         let out_path = output_dir.join(format!("res_{}.png", path.file_stem().unwrap().to_string_lossy()));
         canvas.save(out_path)?;
     }
+
+    println!("Finished, output files saved to {}", output_dir.display());
 
     Ok(())
 }

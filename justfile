@@ -32,4 +32,5 @@ bench:
     cargo bench
 
 run:
-    cargo run --bin run_onnx_v2 --profile release
+    cargo run --example visualize_2 --profile release
+
