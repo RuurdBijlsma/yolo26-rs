@@ -16,7 +16,7 @@ fn main() -> Result<()> {
     )?;
 
     let img_dir = Path::new("assets/img");
-    let output_dir = Path::new("output");
+    let output_dir = Path::new("output/visualization");
     if !output_dir.exists() {
         fs::create_dir(output_dir)?;
     }
@@ -36,7 +36,11 @@ fn main() -> Result<()> {
         }
 
         let file_stem = path.file_stem().unwrap().to_string_lossy();
-        println!("  Detecting: {}.{}", file_stem, path.extension().unwrap().to_string_lossy());
+        println!(
+            "  Detecting: {}.{}",
+            file_stem,
+            path.extension().unwrap().to_string_lossy()
+        );
 
         let results = predictor.predict(&path, 0.4, 0.5)?;
         let base_img = image::open(&path)?.to_rgba8();
@@ -67,7 +71,7 @@ fn main() -> Result<()> {
             draw_filled_rect_mut(
                 &mut det_img,
                 Rect::at(x1 as i32, text_y).of_size(box_width, 22),
-                color
+                color,
             );
 
             draw_text_mut(
@@ -93,8 +97,14 @@ fn main() -> Result<()> {
 
 fn get_color(class_id: usize) -> Rgba<u8> {
     let colors = [
-        [255, 50, 50], [50, 255, 50], [50, 50, 255], [255, 255, 50],
-        [255, 50, 255], [50, 255, 255], [255, 128, 0], [128, 0, 255],
+        [255, 50, 50],
+        [50, 255, 50],
+        [50, 50, 255],
+        [255, 255, 50],
+        [255, 50, 255],
+        [50, 255, 255],
+        [255, 128, 0],
+        [128, 0, 255],
     ];
     let c = colors[class_id % colors.len()];
     Rgba([c[0], c[1], c[2], 255])
