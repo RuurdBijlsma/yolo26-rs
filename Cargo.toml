@@ -25,7 +25,7 @@ imageproc = "0.26.1"
 ab_glyph = "0.2"
 
 [features]
-default = ['load-dynamic']
+default = ["download-binaries", "copy-dylibs"]
 download-binaries = ["ort/download-binaries"]
 copy-dylibs = ["ort/copy-dylibs"]
 load-dynamic = ["ort/load-dynamic"]
