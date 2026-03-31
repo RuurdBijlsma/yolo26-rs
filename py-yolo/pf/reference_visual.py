@@ -20,7 +20,7 @@ from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator, colors
 
 # 1. Load the model
-model = YOLO("yoloe-26n-seg-pf.pt")
+model = YOLO("yoloe-26l-seg-pf.pt")
 
 # Set paths
 img_dir = Path("assets/img")
