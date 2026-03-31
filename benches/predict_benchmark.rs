@@ -1,17 +1,17 @@
+use color_eyre::eyre::Result;
 use criterion::{Criterion, criterion_group, criterion_main};
 use ndarray::s;
 use object_detector::predictor::nms::non_maximum_suppression;
-use object_detector::{ObjectBBox, YOLO26Predictor};
+use object_detector::{ObjectBBox, ObjectDetector};
 use ort::value::Value;
 use std::hint::black_box;
 
-fn benchmark_predict_components(c: &mut Criterion) {
+fn benchmark_predict_components(c: &mut Criterion) -> Result<()> {
     let model_path = "assets/model/yoloe-26l-seg-pf.onnx";
     let vocab_path = "assets/model/vocabulary.json";
     let img_path = "assets/img/fridge.jpg";
 
-    let mut predictor =
-        YOLO26Predictor::new(model_path, vocab_path).expect("Failed to create predictor");
+    let mut predictor = ObjectDetector::builder(model_path, vocab_path).build()?;
     let img = image::open(img_path).expect("Failed to open image");
 
     c.bench_function("preprocess", |b| {
@@ -36,16 +36,9 @@ fn benchmark_predict_components(c: &mut Criterion) {
     let (preds, protos) = {
         let outputs = predictor
             .session
-            .run(ort::inputs!["images" => Value::from_array(input_tensor.clone()).unwrap()])
-            .unwrap();
-        let preds = outputs["detections"]
-            .try_extract_array::<f32>()
-            .unwrap()
-            .to_owned();
-        let protos = outputs["protos"]
-            .try_extract_array::<f32>()
-            .unwrap()
-            .to_owned();
+            .run(ort::inputs!["images" => Value::from_array(input_tensor.clone()).unwrap()])?;
+        let preds = outputs["detections"].try_extract_array::<f32>()?.to_owned();
+        let protos = outputs["protos"].try_extract_array::<f32>()?.to_owned();
         (preds, protos)
     };
 
@@ -97,7 +90,7 @@ fn benchmark_predict_components(c: &mut Criterion) {
 
         c.bench_function("process_mask_single", |b| {
             b.iter(|| {
-                black_box(YOLO26Predictor::process_mask(
+                black_box(ObjectDetector::process_mask(
                     black_box(&protos_view),
                     black_box(weights),
                     black_box(&meta),
@@ -109,10 +102,19 @@ fn benchmark_predict_components(c: &mut Criterion) {
 
     c.bench_function("predict_full", |b| {
         b.iter(|| {
-            predictor.predict(black_box(&img), 0.4, 0.7).unwrap();
+            predictor
+                .predict(black_box(&img))
+                .call()
+                .expect("Predict failed");
         });
     });
+
+    Ok(())
 }
 
-criterion_group!(benches, benchmark_predict_components);
+fn benchmark_wrapper(c: &mut Criterion) {
+    benchmark_predict_components(c).unwrap();
+}
+
+criterion_group!(benches, benchmark_wrapper);
 criterion_main!(benches);

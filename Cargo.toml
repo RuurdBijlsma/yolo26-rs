@@ -19,6 +19,7 @@ rayon = "1.11.0"
 thiserror = "2.0.18"
 serde = { version = "1.0.228", optional = true, features = ["derive"] }
 hf-hub = { version = "0.5.0", features = ["tokio"], optional = true }
+bon = "3.9.1"
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }

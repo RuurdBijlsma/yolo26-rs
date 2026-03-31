@@ -5,17 +5,18 @@ use color_eyre::Result;
 use image::{Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_rect_mut, draw_hollow_rect_mut, draw_text_mut};
 use imageproc::rect::Rect;
-use object_detector::{ObjectMask, YOLO26Predictor};
+use object_detector::{ObjectDetector, ObjectMask};
 use std::fs;
 use std::path::Path;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let mut predictor = YOLO26Predictor::new(
+    let mut predictor = ObjectDetector::builder(
         "assets/model/yoloe-26l-seg-pf.onnx",
         "assets/model/vocabulary.json",
-    )?;
+    )
+    .build()?;
 
     let output_dir = Path::new("output/visualization");
     fs::create_dir_all(output_dir)?;
@@ -28,7 +29,7 @@ fn main() -> Result<()> {
 
         let file_stem = path.file_stem().unwrap().to_string_lossy();
         let img = image::open(&path)?;
-        let results = predictor.predict(&img, 0.4, 0.5)?;
+        let results = predictor.predict(&img).call()?;
         let base_rgba = img.to_rgba8();
 
         for (idx, det) in results.into_iter().enumerate() {

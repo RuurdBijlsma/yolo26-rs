@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use color_eyre::eyre::{Result, eyre};
-    use object_detector::{ObjectBBox, YOLO26Predictor};
+    use object_detector::{ObjectBBox, ObjectDetector};
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
     use std::fs;
@@ -27,10 +27,11 @@ mod tests {
 
     #[test]
     fn test_model_consistency() -> Result<()> {
-        let mut predictor = YOLO26Predictor::new(
+        let mut predictor = ObjectDetector::builder(
             "assets/model/yoloe-26l-seg-pf.onnx",
             "assets/model/vocabulary.json",
-        )?;
+        )
+        .build()?;
 
         let data = fs::read_to_string("assets/expected_outputs.json")?;
         let expected_map: BTreeMap<String, Vec<ExpectedDetection>> = serde_json::from_str(&data)?;
@@ -42,7 +43,7 @@ mod tests {
             let img =
                 image::open(&img_path).map_err(|e| eyre!("Failed to load {img_name}: {e}"))?;
 
-            let actual_dets = predictor.predict(&img, 0.4, 0.7)?;
+            let actual_dets = predictor.predict(&img).call()?;
 
             if actual_dets.len() != expected_dets.len() {
                 all_errors.push(format!(

@@ -7,6 +7,8 @@ use ort::session::{Session, builder::GraphOptimizationLevel};
 use ort::value::Value;
 use rayon::prelude::*;
 use std::{fs, path::Path};
+use ort::ep::ExecutionProviderDispatch;
+use bon::bon;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -62,27 +64,43 @@ pub struct YoloPreprocessMeta {
 }
 
 #[derive(Debug)]
-pub struct YOLO26Predictor {
+pub struct ObjectDetector {
     pub session: Session,
     vocabulary: Vec<String>,
     image_size: u32,
     stride: u32,
 }
 
-impl YOLO26Predictor {
-    /// Initialize predictor using models hosted on `HuggingFace`.
-    pub async fn from_hf() -> Result<Self, ObjectDetectorError> {
-        let model_path = get_hf_model(HfModel::default_model()).await?;
-        get_hf_model(HfModel::default_data()).await?;
-        let vocab_path = get_hf_model(HfModel::default_vocabulary()).await?;
-        Self::new(model_path, vocab_path)
+#[bon]
+impl ObjectDetector {
+    /// Initialize predictor using models hosted on Hugging Face.
+    #[cfg(feature = "hf-hub")]
+    #[builder(finish_fn = build)]
+    pub async fn from_hf(
+        #[builder(default = HfModel::default_model())] model: HfModel,
+        #[builder(default = HfModel::default_data())] data_model: HfModel,
+        #[builder(default = HfModel::default_vocabulary())] vocab_model: HfModel,
+        #[builder(default = &[])] with_execution_providers: &[ExecutionProviderDispatch],
+    ) -> Result<Self, ObjectDetectorError> {
+        let model_path = get_hf_model(model).await?;
+        // Ensure data file is downloaded (ORT expects it in the same directory)
+        get_hf_model(data_model).await?;
+        let vocab_path = get_hf_model(vocab_model).await?;
+
+        Self::builder(model_path, vocab_path)
+            .with_execution_providers(with_execution_providers)
+            .build()
     }
 
+    /// Initialize predictor from local file paths.
+    #[builder]
     pub fn new(
-        model_path: impl AsRef<Path>,
-        vocab_path: impl AsRef<Path>,
+        #[builder(start_fn)] model_path: impl AsRef<Path>,
+        #[builder(start_fn)] vocab_path: impl AsRef<Path>,
+        #[builder(default = &[])] with_execution_providers: &[ExecutionProviderDispatch],
     ) -> Result<Self, ObjectDetectorError> {
         let session = Session::builder()?
+            .with_execution_providers(with_execution_providers)?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
             .with_intra_threads(num_cpus::get())?
             .commit_from_file(model_path)?;
@@ -246,11 +264,12 @@ impl YOLO26Predictor {
         }
     }
 
+    #[builder]
     pub fn predict(
         &mut self,
-        img: &DynamicImage,
-        conf: f32,
-        iou: f32,
+        #[builder(start_fn)] img: &DynamicImage,
+        #[builder(default = 0.4)] conf: f32,
+        #[builder(default = 0.7)] iou: f32,
     ) -> Result<Vec<ObjectDetection>, ObjectDetectorError> {
         let (input_tensor, meta) = self.preprocess(img);
         let outputs = self
@@ -259,8 +278,11 @@ impl YOLO26Predictor {
 
         let preds = outputs["detections"].try_extract_array::<f32>()?;
         let protos = outputs["protos"].try_extract_array::<f32>()?;
-        let (preds_view, protos_view) =
-            (preds.slice(s![0, .., ..]), protos.slice(s![0, .., .., ..]));
+
+        let (preds_view, protos_view) = (
+            preds.slice(s![0, .., ..]),
+            protos.slice(s![0, .., .., ..])
+        );
 
         let mut candidate_boxes = Vec::new();
         let mut candidate_scores = Vec::new();
@@ -292,31 +314,18 @@ impl YOLO26Predictor {
                 let raw_box = candidate_boxes[idx];
 
                 let final_bbox = ObjectBBox {
-                    x1: ((raw_box.x1 - meta.pad.0) / meta.ratio)
-                        .clamp(0.0, meta.orig_shape.0 as f32),
-                    y1: ((raw_box.y1 - meta.pad.1) / meta.ratio)
-                        .clamp(0.0, meta.orig_shape.1 as f32),
-                    x2: ((raw_box.x2 - meta.pad.0) / meta.ratio)
-                        .clamp(0.0, meta.orig_shape.0 as f32),
-                    y2: ((raw_box.y2 - meta.pad.1) / meta.ratio)
-                        .clamp(0.0, meta.orig_shape.1 as f32),
+                    x1: ((raw_box.x1 - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32),
+                    y1: ((raw_box.y1 - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32),
+                    x2: ((raw_box.x2 - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32),
+                    y2: ((raw_box.y2 - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32),
                 };
 
                 ObjectDetection {
                     bbox: final_bbox,
                     score: candidate_scores[idx],
                     class_id: *class_id,
-                    tag: self
-                        .vocabulary
-                        .get(*class_id)
-                        .cloned()
-                        .unwrap_or_else(|| "unknown".into()),
-                    mask: Some(Self::process_mask(
-                        &protos_view,
-                        weights,
-                        &meta,
-                        &final_bbox,
-                    )),
+                    tag: self.vocabulary.get(*class_id).cloned().unwrap_or_else(|| "unknown".into()),
+                    mask: Some(Self::process_mask(&protos_view, weights, &meta, &final_bbox)),
                 }
             })
             .collect())

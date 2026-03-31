@@ -1,5 +1,5 @@
 use color_eyre::Result;
-use object_detector::{ObjectBBox, ObjectDetection, YOLO26Predictor};
+use object_detector::{ObjectBBox, ObjectDetection, ObjectDetector};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
@@ -40,10 +40,11 @@ impl From<ObjectDetection> for SerializableDetection {
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let mut predictor = YOLO26Predictor::new(
+    let mut predictor = ObjectDetector::builder(
         "assets/model/yoloe-26l-seg-pf.onnx",
         "assets/model/vocabulary.json",
-    )?;
+    )
+    .build()?;
 
     let img_dir = Path::new("assets/img");
     let mut all_results = BTreeMap::new();
@@ -54,7 +55,7 @@ fn main() -> Result<()> {
         println!("Processing {file_name}...");
 
         let img = image::open(&path)?;
-        let results = predictor.predict(&img, 0.4, 0.7)?;
+        let results = predictor.predict(&img).call()?;
 
         let serializable: Vec<SerializableDetection> = results
             .into_iter()

@@ -9,17 +9,18 @@ use color_eyre::Result;
 use image::{Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_rect_mut, draw_hollow_rect_mut, draw_text_mut};
 use imageproc::rect::Rect;
-use object_detector::{ObjectMask, YOLO26Predictor};
+use object_detector::{ObjectDetector, ObjectMask};
 use std::fs;
 use std::path::Path;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let mut predictor = YOLO26Predictor::new(
+    let mut predictor = ObjectDetector::builder(
         "assets/model/yoloe-26l-seg-pf.onnx",
         "assets/model/vocabulary.json",
-    )?;
+    )
+    .build()?;
 
     let output_dir = Path::new("output/joined_visualization");
     fs::create_dir_all(output_dir)?;
@@ -31,7 +32,7 @@ fn main() -> Result<()> {
         println!("Detecting objects: {}", path.display());
 
         let img = image::open(&path)?;
-        let mut results = predictor.predict(&img, 0.4, 0.5)?;
+        let mut results = predictor.predict(&img).call()?;
 
         // Sort by area using struct fields
         results.sort_by(|a, b| {
