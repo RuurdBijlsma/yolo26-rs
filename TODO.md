@@ -17,6 +17,7 @@
 * ik wil graag text-prompt supporten, het liefst in rust only, kan dit?
     * maak eerst in python only
     * dan export onnx ervoor maken
+    * dan in python onnx uitvoeren met ultralytics pre&post processing zien of de results matchen
     * dan in python onnx uitvoeren zien of de results matchen
     * dan porten naar rust
 * benchmark alle model sizes en laat speed zien in readme
