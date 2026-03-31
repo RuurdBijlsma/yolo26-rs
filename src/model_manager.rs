@@ -1,4 +1,4 @@
-use color_eyre::eyre::Result;
+use crate::ObjectDetectorError;
 #[cfg(feature = "hf-hub")]
 use hf_hub::api::tokio::Api;
 use std::path::PathBuf;
@@ -41,7 +41,7 @@ impl HfModel {
 
 /// Downloads a file from `HuggingFace` Hub using the provided configuration.
 #[cfg(feature = "hf-hub")]
-pub async fn get_hf_model(model: HfModel) -> Result<PathBuf> {
+pub async fn get_hf_model(model: HfModel) -> Result<PathBuf, ObjectDetectorError> {
     let api = Api::new()?;
     let repo = api.model(model.id);
     Ok(repo.get(&model.file).await?)

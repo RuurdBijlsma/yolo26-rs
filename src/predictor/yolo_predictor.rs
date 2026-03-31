@@ -1,6 +1,6 @@
+use crate::ObjectDetectorError;
 use crate::model_manager::{HfModel, get_hf_model};
 use crate::predictor::nms::non_maximum_suppression;
-use color_eyre::Result;
 use image::{DynamicImage, GenericImageView};
 use ndarray::{Array1, Array2, Array4, Axis, s};
 use ort::session::{Session, builder::GraphOptimizationLevel};
@@ -71,19 +71,20 @@ pub struct YOLO26Predictor {
 
 impl YOLO26Predictor {
     /// Initialize predictor using models hosted on `HuggingFace`.
-    pub async fn from_hf() -> Result<Self> {
+    pub async fn from_hf() -> Result<Self, ObjectDetectorError> {
         let model_path = get_hf_model(HfModel::default_model()).await?;
         get_hf_model(HfModel::default_data()).await?;
         let vocab_path = get_hf_model(HfModel::default_vocabulary()).await?;
         Self::new(model_path, vocab_path)
     }
 
-    pub fn new(model_path: impl AsRef<Path>, vocab_path: impl AsRef<Path>) -> Result<Self> {
+    pub fn new(
+        model_path: impl AsRef<Path>,
+        vocab_path: impl AsRef<Path>,
+    ) -> Result<Self, ObjectDetectorError> {
         let session = Session::builder()?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .unwrap()
-            .with_intra_threads(num_cpus::get())
-            .unwrap()
+            .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .with_intra_threads(num_cpus::get())?
             .commit_from_file(model_path)?;
 
         let vocabulary: Vec<String> = serde_json::from_str(&fs::read_to_string(vocab_path)?)?;
@@ -250,7 +251,7 @@ impl YOLO26Predictor {
         img: &DynamicImage,
         conf: f32,
         iou: f32,
-    ) -> Result<Vec<ObjectDetection>> {
+    ) -> Result<Vec<ObjectDetection>, ObjectDetectorError> {
         let (input_tensor, meta) = self.preprocess(img);
         let outputs = self
             .session
