@@ -18,9 +18,7 @@ pub fn non_maximum_suppression(
         kept.push(current);
 
         let current_box = &boxes[current];
-        indices_vec.retain(|&idx| {
-            calculate_iou(current_box, &boxes[idx]) <= iou_threshold
-        });
+        indices_vec.retain(|&idx| calculate_iou(current_box, &boxes[idx]) <= iou_threshold);
     }
     kept
 }

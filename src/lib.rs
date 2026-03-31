@@ -11,4 +11,4 @@
 pub mod model_manager;
 pub mod predictor;
 
-pub use predictor::{ObjectBBox, ObjectDetection, ObjectMask, YoloPreprocessMeta, YOLO26Predictor};
+pub use predictor::{ObjectBBox, ObjectDetection, ObjectMask, YOLO26Predictor, YoloPreprocessMeta};

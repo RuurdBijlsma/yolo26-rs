@@ -1,16 +1,17 @@
-use std::hint::black_box;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use ndarray::s;
 use object_detector::predictor::nms::non_maximum_suppression;
 use object_detector::{ObjectBBox, YOLO26Predictor};
 use ort::value::Value;
+use std::hint::black_box;
 
 fn benchmark_predict_components(c: &mut Criterion) {
     let model_path = "assets/model/yoloe-26l-seg-pf.onnx";
     let vocab_path = "assets/model/vocabulary.json";
     let img_path = "assets/img/fridge.jpg";
 
-    let mut predictor = YOLO26Predictor::new(model_path, vocab_path).expect("Failed to create predictor");
+    let mut predictor =
+        YOLO26Predictor::new(model_path, vocab_path).expect("Failed to create predictor");
     let img = image::open(img_path).expect("Failed to open image");
 
     c.bench_function("preprocess", |b| {
@@ -21,7 +22,10 @@ fn benchmark_predict_components(c: &mut Criterion) {
 
     c.bench_function("inference", |b| {
         b.iter(|| {
-            let outputs = predictor.session.run(ort::inputs!["images" => Value::from_array(input_tensor.clone()).unwrap()]).unwrap();
+            let outputs = predictor
+                .session
+                .run(ort::inputs!["images" => Value::from_array(input_tensor.clone()).unwrap()])
+                .unwrap();
             let preds = outputs["detections"].try_extract_array::<f32>().unwrap();
             let protos = outputs["protos"].try_extract_array::<f32>().unwrap();
             black_box((preds, protos));
@@ -30,9 +34,18 @@ fn benchmark_predict_components(c: &mut Criterion) {
 
     // Extract data for downstream component benchmarks
     let (preds, protos) = {
-        let outputs = predictor.session.run(ort::inputs!["images" => Value::from_array(input_tensor.clone()).unwrap()]).unwrap();
-        let preds = outputs["detections"].try_extract_array::<f32>().unwrap().to_owned();
-        let protos = outputs["protos"].try_extract_array::<f32>().unwrap().to_owned();
+        let outputs = predictor
+            .session
+            .run(ort::inputs!["images" => Value::from_array(input_tensor.clone()).unwrap()])
+            .unwrap();
+        let preds = outputs["detections"]
+            .try_extract_array::<f32>()
+            .unwrap()
+            .to_owned();
+        let protos = outputs["protos"]
+            .try_extract_array::<f32>()
+            .unwrap()
+            .to_owned();
         (preds, protos)
     };
 
@@ -47,8 +60,10 @@ fn benchmark_predict_components(c: &mut Criterion) {
                 let score = preds_view[[i, 4]];
                 if score > 0.25 {
                     boxes.push(ObjectBBox {
-                        x1: preds_view[[i, 0]], y1: preds_view[[i, 1]],
-                        x2: preds_view[[i, 2]], y2: preds_view[[i, 3]],
+                        x1: preds_view[[i, 0]],
+                        y1: preds_view[[i, 1]],
+                        x2: preds_view[[i, 2]],
+                        y2: preds_view[[i, 3]],
                     });
                     scores.push(score);
                 }
@@ -65,8 +80,10 @@ fn benchmark_predict_components(c: &mut Criterion) {
         let score = preds_view[[i, 4]];
         if score > 0.25 {
             boxes.push(ObjectBBox {
-                x1: preds_view[[i, 0]], y1: preds_view[[i, 1]],
-                x2: preds_view[[i, 2]], y2: preds_view[[i, 3]],
+                x1: preds_view[[i, 0]],
+                y1: preds_view[[i, 1]],
+                x2: preds_view[[i, 2]],
+                y2: preds_view[[i, 3]],
             });
             scores.push(score);
             weights_vec.push(preds_view.slice(s![i, 6..38]).to_owned());

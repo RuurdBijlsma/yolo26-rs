@@ -1,9 +1,9 @@
-use crate::model_manager::{get_hf_model, HfModel};
+use crate::model_manager::{HfModel, get_hf_model};
 use crate::predictor::nms::non_maximum_suppression;
 use color_eyre::Result;
 use image::{DynamicImage, GenericImageView};
-use ndarray::{s, Array1, Array2, Array4, Axis};
-use ort::session::{builder::GraphOptimizationLevel, Session};
+use ndarray::{Array1, Array2, Array4, Axis, s};
+use ort::session::{Session, builder::GraphOptimizationLevel};
 use ort::value::Value;
 use rayon::prelude::*;
 use std::{fs, path::Path};
@@ -29,7 +29,8 @@ impl ObjectMask {
     #[must_use]
     pub fn get(&self, x: u32, y: u32) -> bool {
         let bit_idx = (y * self.width + x) as usize;
-        self.data.get(bit_idx >> 3)
+        self.data
+            .get(bit_idx >> 3)
             .is_some_and(|&byte| (byte & (1 << (bit_idx & 7))) != 0)
     }
 
@@ -79,13 +80,20 @@ impl YOLO26Predictor {
 
     pub fn new(model_path: impl AsRef<Path>, vocab_path: impl AsRef<Path>) -> Result<Self> {
         let session = Session::builder()?
-            .with_optimization_level(GraphOptimizationLevel::Level3).unwrap()
-            .with_intra_threads(num_cpus::get()).unwrap()
+            .with_optimization_level(GraphOptimizationLevel::Level3)
+            .unwrap()
+            .with_intra_threads(num_cpus::get())
+            .unwrap()
             .commit_from_file(model_path)?;
 
         let vocabulary: Vec<String> = serde_json::from_str(&fs::read_to_string(vocab_path)?)?;
 
-        Ok(Self { session, vocabulary, image_size: 640, stride: 32 })
+        Ok(Self {
+            session,
+            vocabulary,
+            image_size: 640,
+            stride: 32,
+        })
     }
 
     #[must_use]
@@ -109,7 +117,12 @@ impl YOLO26Predictor {
         let scale_x = src_w as f32 / unpad_w as f32;
         let scale_y = src_h as f32 / unpad_h as f32;
 
-        let mut content_view = input.slice_mut(s![0, .., top as usize..(top + unpad_h) as usize, left as usize..(left + unpad_w) as usize]);
+        let mut content_view = input.slice_mut(s![
+            0,
+            ..,
+            top as usize..(top + unpad_h) as usize,
+            left as usize..(left + unpad_w) as usize
+        ]);
 
         content_view
             .axis_iter_mut(Axis(1))
@@ -132,12 +145,14 @@ impl YOLO26Predictor {
                     let inv_delta_x = 1.0 - dx;
 
                     for c in 0..3 {
-                        let get_p = |px, py| f32::from(src_raw[((py * src_w + px) as usize * 3) + c]);
+                        let get_p =
+                            |px, py| f32::from(src_raw[((py * src_w + px) as usize * 3) + c]);
                         let val = (get_p(x2_u, y2_u) * dx).mul_add(
                             dy,
                             (get_p(x1_u, y2_u) * inv_delta_x).mul_add(
                                 dy,
-                                (get_p(x1_u, y1_u) * inv_delta_x).mul_add(inv_dy, get_p(x2_u, y1_u) * dx * inv_dy),
+                                (get_p(x1_u, y1_u) * inv_delta_x)
+                                    .mul_add(inv_dy, get_p(x2_u, y1_u) * dx * inv_dy),
                             ),
                         );
                         row_channels[[c, x as usize]] = (val + 0.5).floor() / 255.0;
@@ -145,14 +160,33 @@ impl YOLO26Predictor {
                 }
             });
 
-        (input, YoloPreprocessMeta { ratio, pad: (left as f32, top as f32), orig_shape: (w0, h0), tensor_shape: (w_pad, h_pad) })
+        (
+            input,
+            YoloPreprocessMeta {
+                ratio,
+                pad: (left as f32, top as f32),
+                orig_shape: (w0, h0),
+                tensor_shape: (w_pad, h_pad),
+            },
+        )
     }
 
     #[must_use]
-    pub fn process_mask(protos: &ndarray::ArrayView3<f32>, weights: &Array1<f32>, meta: &YoloPreprocessMeta, bbox: &ObjectBBox) -> ObjectMask {
+    pub fn process_mask(
+        protos: &ndarray::ArrayView3<f32>,
+        weights: &Array1<f32>,
+        meta: &YoloPreprocessMeta,
+        bbox: &ObjectBBox,
+    ) -> ObjectMask {
         let (mask_c, mask_h, mask_w) = protos.dim();
-        let protos_flat = protos.view().into_shape_with_order((mask_c, mask_h * mask_w)).unwrap();
-        let mask_logits = weights.dot(&protos_flat).into_shape_with_order((mask_h, mask_w)).unwrap();
+        let protos_flat = protos
+            .view()
+            .into_shape_with_order((mask_c, mask_h * mask_w))
+            .unwrap();
+        let mask_logits = weights
+            .dot(&protos_flat)
+            .into_shape_with_order((mask_h, mask_w))
+            .unwrap();
 
         let (img_w, img_h) = meta.orig_shape;
         let x_map_factor = meta.ratio * (mask_w as f32 / meta.tensor_shape.0 as f32);
@@ -180,7 +214,9 @@ impl YOLO26Predictor {
 
         for y in iy1..iy2 {
             let my = (y as f32).mul_add(y_map_factor, y_offset);
-            if my < 0.0 || my >= (mask_h as f32 - 1.0) { continue; }
+            if my < 0.0 || my >= (mask_h as f32 - 1.0) {
+                continue;
+            }
 
             let my_f = my.floor() as usize;
             let my_c = (my_f + 1).min(mask_h - 1);
@@ -202,16 +238,28 @@ impl YOLO26Predictor {
             }
         }
 
-        ObjectMask { width: img_w, height: img_h, data }
+        ObjectMask {
+            width: img_w,
+            height: img_h,
+            data,
+        }
     }
 
-    pub fn predict(&mut self, img: &DynamicImage, conf: f32, iou: f32) -> Result<Vec<ObjectDetection>> {
+    pub fn predict(
+        &mut self,
+        img: &DynamicImage,
+        conf: f32,
+        iou: f32,
+    ) -> Result<Vec<ObjectDetection>> {
         let (input_tensor, meta) = self.preprocess(img);
-        let outputs = self.session.run(ort::inputs!["images" => Value::from_array(input_tensor)?])?;
+        let outputs = self
+            .session
+            .run(ort::inputs!["images" => Value::from_array(input_tensor)?])?;
 
         let preds = outputs["detections"].try_extract_array::<f32>()?;
         let protos = outputs["protos"].try_extract_array::<f32>()?;
-        let (preds_view, protos_view) = (preds.slice(s![0, .., ..]), protos.slice(s![0, .., .., ..]));
+        let (preds_view, protos_view) =
+            (preds.slice(s![0, .., ..]), protos.slice(s![0, .., .., ..]));
 
         let mut candidate_boxes = Vec::new();
         let mut candidate_scores = Vec::new();
@@ -221,34 +269,55 @@ impl YOLO26Predictor {
             let score = preds_view[[i, 4]];
             if score > conf {
                 candidate_boxes.push(ObjectBBox {
-                    x1: preds_view[[i, 0]], y1: preds_view[[i, 1]],
-                    x2: preds_view[[i, 2]], y2: preds_view[[i, 3]],
+                    x1: preds_view[[i, 0]],
+                    y1: preds_view[[i, 1]],
+                    x2: preds_view[[i, 2]],
+                    y2: preds_view[[i, 3]],
                 });
                 candidate_scores.push(score);
-                candidate_data.push((preds_view[[i, 5]] as usize, preds_view.slice(s![i, 6..38]).to_owned()));
+                candidate_data.push((
+                    preds_view[[i, 5]] as usize,
+                    preds_view.slice(s![i, 6..38]).to_owned(),
+                ));
             }
         }
 
         let kept = non_maximum_suppression(&candidate_boxes, &candidate_scores, iou);
 
-        Ok(kept.into_par_iter().map(|idx| {
-            let (class_id, weights) = &candidate_data[idx];
-            let raw_box = candidate_boxes[idx];
+        Ok(kept
+            .into_par_iter()
+            .map(|idx| {
+                let (class_id, weights) = &candidate_data[idx];
+                let raw_box = candidate_boxes[idx];
 
-            let final_bbox = ObjectBBox {
-                x1: ((raw_box.x1 - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32),
-                y1: ((raw_box.y1 - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32),
-                x2: ((raw_box.x2 - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32),
-                y2: ((raw_box.y2 - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32),
-            };
+                let final_bbox = ObjectBBox {
+                    x1: ((raw_box.x1 - meta.pad.0) / meta.ratio)
+                        .clamp(0.0, meta.orig_shape.0 as f32),
+                    y1: ((raw_box.y1 - meta.pad.1) / meta.ratio)
+                        .clamp(0.0, meta.orig_shape.1 as f32),
+                    x2: ((raw_box.x2 - meta.pad.0) / meta.ratio)
+                        .clamp(0.0, meta.orig_shape.0 as f32),
+                    y2: ((raw_box.y2 - meta.pad.1) / meta.ratio)
+                        .clamp(0.0, meta.orig_shape.1 as f32),
+                };
 
-            ObjectDetection {
-                bbox: final_bbox,
-                score: candidate_scores[idx],
-                class_id: *class_id,
-                tag: self.vocabulary.get(*class_id).cloned().unwrap_or_else(|| "unknown".into()),
-                mask: Some(Self::process_mask(&protos_view, weights, &meta, &final_bbox)),
-            }
-        }).collect())
+                ObjectDetection {
+                    bbox: final_bbox,
+                    score: candidate_scores[idx],
+                    class_id: *class_id,
+                    tag: self
+                        .vocabulary
+                        .get(*class_id)
+                        .cloned()
+                        .unwrap_or_else(|| "unknown".into()),
+                    mask: Some(Self::process_mask(
+                        &protos_view,
+                        weights,
+                        &meta,
+                        &final_bbox,
+                    )),
+                }
+            })
+            .collect())
     }
 }

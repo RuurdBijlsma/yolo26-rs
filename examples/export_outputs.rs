@@ -1,5 +1,5 @@
 use color_eyre::Result;
-use object_detector::{ObjectDetection, YOLO26Predictor};
+use object_detector::{ObjectBBox, ObjectDetection, YOLO26Predictor};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
@@ -9,7 +9,7 @@ use std::path::Path;
 struct SerializableDetection {
     tag: String,
     score: f32,
-    bbox: [f32; 4],
+    bbox: ObjectBBox,
     mask_stats: Option<MaskStats>,
 }
 
@@ -31,8 +31,7 @@ impl From<ObjectDetection> for SerializableDetection {
         Self {
             tag: det.tag,
             score: det.score,
-            // Convert BoundingBox struct fields to the array format for JSON compatibility
-            bbox: [det.bbox.x1, det.bbox.y1, det.bbox.x2, det.bbox.y2],
+            bbox: det.bbox,
             mask_stats,
         }
     }
