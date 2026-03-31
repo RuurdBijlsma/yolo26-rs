@@ -7,7 +7,7 @@ use ort::value::Value;
 use std::hint::black_box;
 
 fn benchmark_predict_components(c: &mut Criterion) -> Result<()> {
-    let model_path = "assets/model/yoloe-26l-seg-pf.onnx";
+    let model_path = "assets/model/yoloe-26n-seg-pf.onnx";
     let vocab_path = "assets/model/vocabulary.json";
     let img_path = "assets/img/fridge.jpg";
 

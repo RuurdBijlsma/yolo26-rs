@@ -19,7 +19,7 @@ fn main() -> Result<()> {
     color_eyre::install()?;
 
     let mut predictor = ObjectDetector::builder(
-        "assets/model/yoloe-26l-seg-pf.onnx",
+        "assets/model/yoloe-26n-seg-pf.onnx",
         "assets/model/vocabulary.json",
     )
     .with_execution_providers(&[CUDA::default().build()])

@@ -14,4 +14,5 @@
 * kleinere models pullen en kijken of die ook werken
 * kan ik t ook werkend krijgen met class list als model input? Dus je zegt egg als input en dan detect ie alleen eggs
 * leg in readme uit hoe je een onnx export in python
-* zit 3 files tegelijk downloaden ingebouwd in hf?
+* benchmark alle model sizes en laat speed zien in readme
+  * 26n: 169ms

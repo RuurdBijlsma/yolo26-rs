@@ -174,7 +174,7 @@ class YOLO26StandalonePredictor:
 
 def main():
     # Make sure you use the Dynamic ONNX exported previously
-    MODEL_ONNX = "assets/model/yoloe-26l-seg-pf.onnx"
+    MODEL_ONNX = "assets/model/yoloe-26n-seg-pf.onnx"
     VOCAB_JSON = "assets/model/vocabulary.json"
     IMG_DIR = Path("assets/img")
 

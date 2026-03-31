@@ -16,11 +16,13 @@ import cv2
 import torch
 from ultralytics import YOLO
 
+model_name = "yoloe-26l-seg-pf.pt"
+
 # 1. Load the Large Prompt-Free model
 # This model is capable of Detection, Segmentation, and Open-Vocabulary prompting
-model = YOLO("yoloe-26l-seg-pf.pt")
+model = YOLO(model_name)
 
-ckpt = torch.load("yoloe-26l-seg-pf.pt", map_location="cpu", weights_only=False)
+ckpt = torch.load(model_name, map_location="cpu", weights_only=False)
 # Check if there are metadata keys
 print("CKPT METADATA")
 print(ckpt.get("metadata", {}))
