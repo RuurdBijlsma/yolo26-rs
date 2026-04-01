@@ -15,10 +15,15 @@
 * kan ik t ook werkend krijgen met class list als model input? Dus je zegt egg als input en dan detect ie alleen eggs
 * leg in readme uit hoe je een onnx export in python
 * ik wil graag text-prompt supporten, het liefst in rust only, kan dit?
-    * maak eerst in python only
-    * dan export onnx ervoor maken
-    * dan in python onnx uitvoeren met ultralytics pre&post processing zien of de results matchen <- we are here, de results matchen niet
-    * dan in python onnx uitvoeren zien of de results matchen
+    * ✅ maak eerst in python only
+    * ✅ dan export onnx ervoor maken
+    * ✅ dan in python onnx uitvoeren met ultralytics pre&post processing zien of de results matchen <- we are here, de
+      results matchen niet
+    * ✅ dan in python onnx uitvoeren zien of de results matchen
     * dan porten naar rust
+        * de promptable_basic.rs example werkt soortvan, niet exact zelfde results als python onnx impl
+        * maak mapje in src die promptable heet ofzo, en dan daarin de code zetten om 'm te runnen
+        * maak example die visualized met mask+bbox+tags+score
+        * zie of ik 'm gelijk kan krijgen met python-onnx
 * benchmark alle model sizes en laat speed zien in readme
     * 26n: 169ms
