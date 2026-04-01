@@ -20,7 +20,7 @@ from ultralytics import YOLOE
 def run_yoloe_text_visualization():
     # 1. Setup Models and Paths
     model_name = "yoloe-26x-seg.pt"
-    img_dir = Path("assets/img")
+    img_dir = Path("img")
 
     # Create a clear output directory for your experiments
     output_dir = Path("output/text_results")

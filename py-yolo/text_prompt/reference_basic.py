@@ -18,7 +18,7 @@ from pathlib import Path
 def debug_market_person_count():
     # 1. Setup
     model_path = "yoloe-26x-seg.pt"
-    img_path = Path("assets/img/market.jpg")
+    img_path = Path("img/market.jpg")
 
     if not img_path.exists():
         print(f"Error: Could not find {img_path}")
