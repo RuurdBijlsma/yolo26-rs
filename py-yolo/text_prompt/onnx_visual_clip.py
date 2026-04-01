@@ -17,6 +17,7 @@ import torchvision
 import torch.nn.functional as F
 import clip
 from pathlib import Path
+from collections import Counter
 
 
 # --- HELPERS ---
@@ -110,7 +111,6 @@ class YOLOE_Pure_Inference:
         boxes_xyxy = np.stack([x1, y1, x2, y2], axis=1)
 
         # Multi-Class NMS
-        # Offset boxes by class_id * max_coordinate to separate classes during suppression
         offset = class_ids * 4096
         boxes_for_nms = boxes_xyxy + offset[:, None]
 
@@ -126,47 +126,36 @@ class YOLOE_Pure_Inference:
 
         # MASK PROCESSING
         c_p, mh, mw = protos.shape
-        # Multiply raw coefficients with protos (keeping them as LOGITS for now)
         masks = (torch.from_numpy(final_coeffs) @ torch.from_numpy(protos).view(c_p, -1)).view(-1, mh, mw)
-
-        # Upscale LOGITS to canvas size
         masks = F.interpolate(masks[None], (c_h, c_w), mode='bilinear', align_corners=False)[0]
-
-        # Apply sigmoid and crop in canvas space
         masks = torch.sigmoid(masks)
         masks = crop_mask(masks, torch.from_numpy(final_boxes))
 
-        # Slicing padding
         ph, pw = int(pad[1]), int(pad[0])
         unh, unw = c_h - 2 * ph, c_w - 2 * pw
         masks = masks[:, ph:ph + unh, pw:pw + unw]
 
-        # Final Upscale to original and threshold
         masks = F.interpolate(masks[None], (ih, iw), mode='bilinear', align_corners=False)[0].gt(0.5).numpy()
 
-        # Final Box Rescaling & Clipping
         final_boxes[:, [0, 2]] = (final_boxes[:, [0, 2]] - pad[0]) / ratio[0]
         final_boxes[:, [1, 3]] = (final_boxes[:, [1, 3]] - pad[1]) / ratio[1]
 
         return img0, list(zip(final_boxes, final_scores, final_cids, masks))
 
+
 def visualize(img, detections, classes, out_path):
     canvas = img.copy()
     overlay = canvas.copy()
 
-    # Sort detections by score so higher scores are drawn "on top"
     detections = sorted(detections, key=lambda x: x[1])
 
     for box, score, cid, mask in detections:
         color = get_color(int(cid))
-        # Mask overlay
         overlay[mask] = color
 
-        # Draw Box with AA for smoothness
         x1, y1, x2, y2 = box.astype(int)
         cv2.rectangle(canvas, (x1, y1), (x2, y2), color, 2, cv2.LINE_AA)
 
-        # Draw Label with background (Standard YOLO look)
         label = f"{classes[cid]} {score:.2f}"
         (tw, th), baseline = cv2.getTextSize(label, 0, 0.5, 1)
         cv2.rectangle(canvas, (x1, y1 - th - 5), (x1 + tw, y1), color, -1)
@@ -186,13 +175,28 @@ def main():
 
     inf = YOLOE_Pure_Inference(ONNX)
 
-    # List images
     imgs = list(IMG_DIR.glob("*.jpg")) + list(IMG_DIR.glob("*.png"))
 
     for img_p in imgs:
-        print(f"Processing {img_p.name}...")
+        print(f"\nProcessing {img_p.name}...")
         img, dets = inf.run(img_p, CLASSES)
+
         if img is not None:
+            # --- START TAG COUNTING LOGIC ---
+            print(f"--- Result Summary ---")
+            print(f"Objects detected: {len(dets)}")
+
+            # Extract labels from detections (index 2 is the class id)
+            detected_labels = [CLASSES[d[2]] for d in dets]
+            tag_counts = Counter(detected_labels)
+
+            if tag_counts:
+                print("--- Counts per Tag ---")
+                # Sort by count descending, then by tag name
+                for tag, count in tag_counts.most_common():
+                    print(f"{tag:<12}: {count}")
+            # --- END TAG COUNTING LOGIC ---
+
             visualize(img, dets, CLASSES, OUT_DIR / f"pure_{img_p.name}")
 
 
