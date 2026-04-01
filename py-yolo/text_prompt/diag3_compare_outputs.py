@@ -111,7 +111,7 @@ def compare_outputs():
     if diff.max() > 1e-2:
         print("\n[!!!] ALERT: Large numerical difference. Check your ONNX export wrapper.")
     else:
-        print("\n[SUCCESS] The math inside both models is identical.")
+        print("\n[SUCCESS] The math inside both models is close enough.")
 
 
 if __name__ == "__main__":

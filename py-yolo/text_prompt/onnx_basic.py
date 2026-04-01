@@ -10,89 +10,155 @@
 # ]
 # ///
 import cv2
+import torch
 import numpy as np
 import onnxruntime as ort
-import torch
 import torchvision
-from ultralytics import YOLOE
 from pathlib import Path
 
 def letterbox_rectangular(img, new_shape=640, color=(114, 114, 114), stride=32):
-    shape = img.shape[:2]
-    r = min(new_shape / shape[0], new_shape / shape[1])
+    """
+    Replicates the Ultralytics Letterbox 'auto' mode used during predict().
+    """
+    shape = img.shape[:2]  # current shape [height, width]
+    if isinstance(new_shape, int):
+        new_shape = (new_shape, new_shape)
+
+    # 1. Calculate Scale Ratio (new / old)
+    r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+
+    # 2. Compute unpadded dimensions
     new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
-    dw, dh = new_shape - new_unpad[0], new_shape - new_unpad[1]
-    dw, dh = np.mod(dw, stride), np.mod(dh, stride)
+
+    # 3. Compute padding for stride
+    dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]
+    dw = np.mod(dw, stride)
+    dh = np.mod(dh, stride)
+
+    # Divide padding into two sides (centering)
     dw /= 2
     dh /= 2
+
+    # 4. Resize if needed
     if shape[::-1] != new_unpad:
         img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+
+    # 5. Add padding
     top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
     img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
-    return img
 
-def xywh2xyxy(x):
-    """Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right."""
-    y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
-    y[..., 0] = x[..., 0] - x[..., 2] / 2  # top left x
-    y[..., 1] = x[..., 1] - x[..., 3] / 2  # top left y
-    y[..., 2] = x[..., 0] + x[..., 2] / 2  # bottom right x
-    y[..., 3] = x[..., 1] + x[..., 3] / 2  # bottom right y
-    return y
+    return img, (r, r), (dw, dh)
 
-def debug_onnx_market_person_count():
-    onnx_path = "assets/prompt_model/yoloe-26x-text-dynamic.onnx"
-    img_path = Path("assets/img/market.jpg")
+def rescale_boxes(boxes, r, pad):
+    """
+    Rescale boxes from letterboxed canvas back to original image coordinates.
+    boxes: [N, 4] (x1, y1, x2, y2)
+    r: scale ratio
+    pad: (dw, dh)
+    """
+    # Subtract padding
+    boxes[:, [0, 2]] -= pad[0]  # x padding
+    boxes[:, [1, 3]] -= pad[1]  # y padding
+
+    # Divide by ratio
+    boxes[:, :4] /= r[0]
+    return boxes
+
+def run_onnx_basic():
+    # --- CONFIGURATION ---
+    img_path = Path("img/market.jpg")
+    onnx_path = "../../assets/prompt_model/yoloe-26x-text-dynamic.onnx"
     conf_threshold = 0.15
-    iou_threshold = 0.7
+    iou_threshold = 0.7  # Official YOLO default (your sweep showed this matches reference)
 
-    # 1. Setup
-    session = ort.InferenceSession(onnx_path, providers=['CPUExecutionProvider'])
-    yoloe_helper = YOLOE("yoloe-26x-seg.pt")
+    if not img_path.exists():
+        print(f"Error: Could not find {img_path}")
+        return
 
-    # 2. Preprocess
+    # 1. LOAD IMAGE & PREPROCESS
     img0 = cv2.imread(str(img_path))
-    canvas = letterbox_rectangular(img0, 640)
-    canvas_rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
-    input_tensor = canvas_rgb.transpose(2, 0, 1)[None].astype(np.float32) / 255.0
+    original_shape = img0.shape[:2]
 
-    # 3. Inference
-    with torch.no_grad():
-        embeddings = yoloe_helper.get_text_pe(["person"]).cpu().numpy()
+    # Use verified rectangular preprocessing
+    img_canvas, ratio, pad = letterbox_rectangular(img0, new_shape=640, stride=32)
 
-    outputs = session.run(None, {'images': input_tensor, 'text_embeddings': embeddings})
-    preds = np.squeeze(outputs[0]).T # [5040, 37]
+    # BGR to RGB, Normalize, HWC to CHW
+    img_rgb = cv2.cvtColor(img_canvas, cv2.COLOR_BGR2RGB)
+    img_tensor = img_rgb.transpose(2, 0, 1)[None].astype(np.float32) / 255.0
 
-    # 4. Torch-based NMS (Replicating Ultralytics exactly)
-    preds = torch.from_numpy(preds)
+    # 2. LOAD TEXT EMBEDDING (Reference from your diag scripts)
+    # In a real app, you'd use MobileCLIP here.
+    # For debugging parity, we use the saved .npy from the reference run.
+    try:
+        text_pe = np.load("ref_text_pe.npy")
+    except FileNotFoundError:
+        print("Error: ref_text_pe.npy not found. Run diag_export_reference.py first!")
+        return
 
-    # Filter by confidence
-    # Column 4 is 'person' score
-    keep = preds[:, 4] > conf_threshold
-    preds = preds[keep]
+    # 3. ONNX INFERENCE
+    session = ort.InferenceSession(onnx_path, providers=['CPUExecutionProvider'])
+    outputs = session.run(None, {
+        'images': img_tensor,
+        'text_embeddings': text_pe
+    })
 
-    if preds.shape[0] > 0:
-        # Convert xywh to xyxy
-        boxes = xywh2xyxy(preds[:, :4])
-        scores = preds[:, 4]
+    # Raw output0 shape: [1, 37, 5040] (37 = 4 box + 1 score + 32 mask coeffs)
+    preds = np.squeeze(outputs[0]).T  # [5040, 37]
 
-        # torchvision.ops.nms is the engine behind YOLO
-        # It handles overlaps with high floating-point precision
-        indices = torchvision.ops.nms(boxes, scores, iou_threshold)
+    # 4. DECODE AND FILTER
+    # Columns 0,1,2,3: cx, cy, w, h
+    # Column 4: Score for 'person'
+    scores = preds[:, 4]
 
-        # Limit to max_det=300 (YOLO default)
-        indices = indices[:300]
-        person_count = len(indices)
-    else:
-        person_count = 0
+    # Filter candidates by confidence first
+    conf_mask = scores > conf_threshold
+    scores = scores[conf_mask]
+    boxes_raw = preds[conf_mask, :4]
 
-    print(f"\n{'='*30}")
-    print(f"ONNX DEBUG RESULTS (TORCH NMS)")
-    print(f"{'='*30}")
+    if len(scores) == 0:
+        print("No detections found above threshold.")
+        return
+
+    # Convert cx, cy, w, h -> x1, y1, x2, y2 (in the 640px space)
+    x1 = boxes_raw[:, 0] - boxes_raw[:, 2] / 2
+    y1 = boxes_raw[:, 1] - boxes_raw[:, 3] / 2
+    x2 = boxes_raw[:, 0] + boxes_raw[:, 2] / 2
+    y2 = boxes_raw[:, 1] + boxes_raw[:, 3] / 2
+    boxes_xyxy = np.stack([x1, y1, x2, y2], axis=1)
+
+    # 5. NMS (Using Torchvision for 1:1 Parity)
+    # We pass the boxes in the 640-canvas coordinate space
+    keep_indices = torchvision.ops.nms(
+        torch.from_numpy(boxes_xyxy).float(),
+        torch.from_numpy(scores).float(),
+        iou_threshold
+    )
+
+    final_boxes = boxes_xyxy[keep_indices]
+    final_scores = scores[keep_indices]
+
+    # 6. RESCALE TO ORIGINAL IMAGE
+    final_boxes_rescaled = rescale_boxes(final_boxes.copy(), ratio, pad)
+
+    # Clip boxes to image boundaries
+    final_boxes_rescaled[:, [0, 2]] = final_boxes_rescaled[:, [0, 2]].clip(0, original_shape[1])
+    final_boxes_rescaled[:, [1, 3]] = final_boxes_rescaled[:, [1, 3]].clip(0, original_shape[0])
+
+    print("\n" + "=" * 30)
+    print("ONNX FINAL RESULTS")
+    print("=" * 30)
     print(f"Image: {img_path.name}")
-    print(f"Detected Persons: {person_count}")
-    print(f"{'='*30}\n")
+    print(f"Original Size: {original_shape[1]}x{original_shape[0]}")
+    print(f"Inference Size: {img_canvas.shape[1]}x{img_canvas.shape[0]}")
+    print(f"Raw Candidates: {len(scores)}")
+    print(f"Detected Persons: {len(final_boxes_rescaled)}")
+    print("=" * 30)
+
+    # Optional: Print top 3 to verify box math
+    for i in range(min(3, len(final_boxes_rescaled))):
+        box = final_boxes_rescaled[i]
+        print(f"Box {i}: [{box[0]:.1f}, {box[1]:.1f}, {box[2]:.1f}, {box[3]:.1f}] Score: {final_scores[i]:.4f}")
 
 if __name__ == "__main__":
-    debug_onnx_market_person_count()
+    run_onnx_basic()
