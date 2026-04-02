@@ -10,80 +10,120 @@
 # ]
 # ///
 
-
 import torch
 from pathlib import Path
 from ultralytics import YOLOE
 
-
-class YOLOE_Complete_Wrapper(torch.nn.Module):
-    def __init__(self, yoloe_model):
+class YOLOE_Promptable_Wrapper(torch.nn.Module):
+    def __init__(self, yoloe_model, export_mask=True):
         super().__init__()
         self.model = yoloe_model.model
-        # Force One-to-Many head
-        self.model.model[-1].end2end = False
+        self.export_mask = export_mask
 
-    def forward(self, x, raw_clip_embeddings):
-        """
-        x: Images [1, 3, 640, 640]
-        raw_clip_embeddings: Raw output from mobileclip2_b.ts [1, N, 512]
-        """
-        # 1. APPLY PROJECTION HEAD INSIDE ONNX
-        # This is the 'get_tpe' logic from tasks.py
-        head = self.model.model[-1]
-        projected_text = head.get_tpe(raw_clip_embeddings)
+        # Configure the head
+        self.head = self.model.model[-1]
+        self.head.end2end = False
+        self.head.export = True
 
-        # 2. STANDARD FORWARD
+    def forward(self, x, text_embeddings):
+        # 1. Generate the Text Projection (TPE)
+        projected_text = self.head.get_tpe(text_embeddings)
+
+        # 2. Manual Forward Loop
+        # We store ALL outputs in 'y' to prevent NoneType errors in Concat layers
         y = []
+        feat = x
         for m in self.model.model:
-            if m.f != -1:
-                feat = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j
-                                                            in m.f]
+            if m == self.head:
+                # Prepare head input: [Visual_P3, Visual_P4, Visual_P5] + [Text_TPE]
+                head_input = [y[j] for j in m.f] + [projected_text]
+                out = m(head_input)
+
+                # out[0] is detections: [Batch, 300, 4 + num_classes + 32]
+                # out[1] is protos: [Batch, 32, 160, 160]
+                if self.export_mask:
+                    return out
+                else:
+                    # Strip mask coefficients (last 32 columns)
+                    # Returning only detections tensor
+                    return out[0][..., :-32]
+
+            # Standard YOLO layer logic
+            # Layer input 'xi' is either the previous output or skip-connections
+            if m.f == -1:
+                xi = feat
+            elif isinstance(m.f, int):
+                xi = y[m.f]
             else:
-                feat = x
+                xi = [y[j] for j in m.f]
 
-            if m == head:
-                # Pass the already projected text to the head
-                head_input = feat + [projected_text]
-                return m(head_input)
+            feat = m(xi)
+            y.append(feat)
 
-            x = m(feat)
-            y.append(x if m.i in self.model.save else None)
+def export_all_prompt_variants():
+    scales = ["n", "s", "m", "l", "x"]
+    output_dir = Path("assets/model/promptable")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-
-def export_yoloe_final():
-    model_scale = "x"
-    pt_file = f"yoloe-26{model_scale}-seg.pt"
-    out_dir = Path("assets/model/promptable")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    onnx_path = out_dir / f"yoloe-26{model_scale}-pure-clip.onnx"
-
-    print(f"--- Loading {pt_file} ---")
-    yolo = YOLOE(pt_file)
-
-    # Wrap with the internal projection head included
-    wrapper = YOLOE_Complete_Wrapper(yolo).eval()
-
-    dummy_img = torch.randn(1, 3, 640, 640)
+    img_size = 640
+    # Trace with 5 classes to establish the dynamic shape logic
+    dummy_img = torch.randn(1, 3, img_size, img_size)
     dummy_txt = torch.randn(1, 5, 512)
 
-    print(f"--- Exporting to: {onnx_path} ---")
-    torch.onnx.export(
-        wrapper,
-        (dummy_img, dummy_txt),
-        onnx_path,
-        opset_version=18,
-        input_names=['images', 'text_embeddings'],
-        output_names=['output0', 'protos'],
-        dynamic_axes={
-            'images': {0: 'batch', 2: 'height', 3: 'width'},
-            'text_embeddings': {0: 'batch', 1: 'num_classes'},
-            'output0': {0: 'batch', 1: 'anchors'},
-            'protos': {0: 'batch'}
-        }
-    )
-    print("SUCCESS: ONNX now accepts RAW CLIP embeddings.")
+    for scale in scales:
+        pt_file = f"yoloe-26{scale}-seg.pt"
 
+        # --- VARIANT A: SEGMENTATION ---
+        print(f"\n--- Exporting {scale.upper()} (SEGMENTATION) ---")
+        try:
+            # Load fresh model (will download automatically if missing)
+            yolo_seg = YOLOE(pt_file)
+            wrapper_seg = YOLOE_Promptable_Wrapper(yolo_seg, export_mask=True).eval()
+
+            out_path_seg = output_dir / f"yoloe-26{scale}-pure-clip-seg.onnx"
+            torch.onnx.export(
+                wrapper_seg,
+                (dummy_img, dummy_txt),
+                str(out_path_seg),
+                opset_version=18,
+                input_names=['images', 'text_embeddings'],
+                output_names=['output0', 'protos'],
+                dynamic_axes={
+                    'images': {0: 'batch', 2: 'height', 3: 'width'},
+                    'text_embeddings': {0: 'batch', 1: 'num_classes'},
+                    'output0': {0: 'batch', 1: 'anchors'},
+                    'protos': {0: 'batch'}
+                }
+            )
+            print(f"Success: {out_path_seg.name}")
+        except Exception as e:
+            print(f"Failed to export {scale} Seg: {e}")
+
+        # --- VARIANT B: DETECTION ---
+        print(f"--- Exporting {scale.upper()} (DETECTION) ---")
+        try:
+            yolo_det = YOLOE(pt_file)
+            wrapper_det = YOLOE_Promptable_Wrapper(yolo_det, export_mask=False).eval()
+
+            out_path_det = output_dir / f"yoloe-26{scale}-pure-clip-det.onnx"
+            torch.onnx.export(
+                wrapper_det,
+                (dummy_img, dummy_txt),
+                str(out_path_det),
+                opset_version=18,
+                input_names=['images', 'text_embeddings'],
+                output_names=['output0'],
+                dynamic_axes={
+                    'images': {0: 'batch', 2: 'height', 3: 'width'},
+                    'text_embeddings': {0: 'batch', 1: 'num_classes'},
+                    'output0': {0: 'batch', 1: 'anchors'}
+                }
+            )
+            print(f"Success: {out_path_det.name}")
+        except Exception as e:
+            print(f"Failed to export {scale} Det: {e}")
+
+    print("\nAll tasks completed.")
 
 if __name__ == "__main__":
-    export_yoloe_final()
+    export_all_prompt_variants()
