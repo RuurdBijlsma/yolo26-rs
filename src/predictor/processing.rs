@@ -1,5 +1,5 @@
 use image::{DynamicImage, GenericImageView};
-use ndarray::{Array1, Array2, Array4, Axis, s};
+use ndarray::{Array1, Array2, Array4, Axis, s, ArrayView3};
 use ort::session::Session;
 use rayon::prelude::*;
 
@@ -225,7 +225,7 @@ pub fn reconstruct_mask(
 
 pub fn finalize_detections(
     candidates: Vec<Candidate>,
-    protos_view: &ndarray::ArrayView3<f32>,
+    protos_view: Option<&ArrayView3<f32>>, 
     meta: &YoloPreprocessMeta,
     labels: &[String],
 ) -> Vec<ObjectDetection> {
@@ -239,6 +239,22 @@ pub fn finalize_detections(
                 y2: ((cand.bbox.y2 - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32),
             };
 
+            // Only attempt to reconstruct mask if we have both protos and weights
+            let mask = if let Some(protos) = protos_view {
+                if cand.mask_weights.is_empty() {
+                    None
+                } else {
+                    Some(reconstruct_mask(
+                        protos,
+                        &cand.mask_weights,
+                        meta,
+                        &final_bbox,
+                    ))
+                }
+            } else {
+                None
+            };
+
             ObjectDetection {
                 bbox: final_bbox,
                 score: cand.score,
@@ -247,12 +263,7 @@ pub fn finalize_detections(
                     .get(cand.class_id)
                     .cloned()
                     .unwrap_or_else(|| "unknown".into()),
-                mask: Some(reconstruct_mask(
-                    protos_view,
-                    &cand.mask_weights,
-                    meta,
-                    &final_bbox,
-                )),
+                mask,
             }
         })
         .collect()

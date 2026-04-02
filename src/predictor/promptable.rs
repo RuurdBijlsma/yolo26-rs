@@ -5,7 +5,7 @@ use crate::predictor::processing::{
 };
 use bon::bon;
 use image::DynamicImage;
-use ndarray::{Axis, Ix2, s};
+use ndarray::{Array1, Axis, Ix2, s};
 use open_clip_inference::TextEmbedder;
 use ort::ep::ExecutionProviderDispatch;
 use ort::session::{Session, builder::GraphOptimizationLevel};
@@ -58,8 +58,7 @@ impl PromptableDetector {
         let text_tensor = text_embs.insert_axis(Axis(0)); // [1, N, 512]
 
         // 2. Preprocess Image
-        let (img_tensor, meta) =
-            preprocess_image(img, self.engine.image_size, self.engine.stride);
+        let (img_tensor, meta) = preprocess_image(img, self.engine.image_size, self.engine.stride);
 
         // 3. Inference
         let outputs = self.engine.session.run(ort::inputs![
@@ -68,7 +67,10 @@ impl PromptableDetector {
         ])?;
 
         let raw_output = outputs["output0"].try_extract_array::<f32>()?;
-        let protos = outputs["protos"].try_extract_array::<f32>()?;
+        let protos = outputs
+            .get("protos")
+            .map(|p| p.try_extract_array::<f32>())
+            .transpose()?;
 
         // Transpose output: [1, features, 8400] -> [8400, features]
         let preds_2d = raw_output
@@ -77,6 +79,10 @@ impl PromptableDetector {
             .reversed_axes();
 
         let num_classes = labels.len();
+
+        // Check if model has enough columns for mask weights (4 box + num_classes + 32 weights)
+        let has_masks = protos.is_some() && preds_2d.shape()[1] >= 4 + num_classes + 32;
+
         let mut candidates = Vec::new();
 
         // 4. Extract candidates
@@ -94,6 +100,13 @@ impl PromptableDetector {
             }
 
             if max_score > confidence_threshold {
+                let mask_weights = if has_masks {
+                    row.slice(s![4 + num_classes..4 + num_classes + 32])
+                        .to_owned()
+                } else {
+                    Array1::default(0)
+                };
+
                 candidates.push(Candidate {
                     bbox: ObjectBBox {
                         x1: row[0] - row[2] / 2.0,
@@ -103,7 +116,7 @@ impl PromptableDetector {
                     },
                     score: max_score,
                     class_id: max_cls_id,
-                    mask_weights: row.slice(s![4 + num_classes..4 + num_classes + 32]).to_owned(),
+                    mask_weights,
                 });
             }
         }
@@ -118,15 +131,16 @@ impl PromptableDetector {
             .map(|idx| candidates[idx].clone())
             .collect();
 
-        let protos_view = protos.slice(s![0, .., .., ..]);
+        // Prepare protos view if it exists
+        let protos_view = protos.as_ref().map(|p| p.slice(s![0, .., .., ..]));
 
         // Convert slice labels to String for the shared finalizer
         let label_strings: Vec<String> = labels.iter().map(|s| s.to_string()).collect();
 
-        // 6. Use unified finalization logic
+        // 6. Use unified finalization logic (passing protos as Option)
         Ok(finalize_detections(
             kept_candidates,
-            &protos_view,
+            protos_view.as_ref(),
             &meta,
             &label_strings,
         ))

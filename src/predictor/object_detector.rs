@@ -1,15 +1,14 @@
-use crate::model_manager::{get_hf_model, HfModel};
+use crate::ObjectDetectorError;
+use crate::model_manager::{HfModel, get_hf_model};
 use crate::predictor::nms::non_maximum_suppression;
 use crate::predictor::processing::{
-    finalize_detections, preprocess_image, Candidate, ObjectBBox, ObjectDetection,
-    YoloEngine,
+    Candidate, ObjectBBox, ObjectDetection, YoloEngine, finalize_detections, preprocess_image,
 };
-use crate::ObjectDetectorError;
 use bon::bon;
 use image::DynamicImage;
-use ndarray::s;
+use ndarray::{s, Array1};
 use ort::ep::ExecutionProviderDispatch;
-use ort::session::{builder::GraphOptimizationLevel, Session};
+use ort::session::{Session, builder::GraphOptimizationLevel};
 use ort::value::Value;
 use std::{fs, path::Path};
 
@@ -78,18 +77,30 @@ impl ObjectDetector {
             .engine
             .session
             .run(ort::inputs!["images" => Value::from_array(input_tensor)?])?;
-
+        
         let preds = outputs["detections"].try_extract_array::<f32>()?;
-        let protos = outputs["protos"].try_extract_array::<f32>()?;
+        let protos = outputs
+            .get("protos")
+            .map(|p| p.try_extract_array::<f32>())
+            .transpose()?;
 
         let preds_view = preds.slice(s![0, .., ..]);
-        let protos_view = protos.slice(s![0, .., .., ..]);
 
-        // 1. Extract candidates that pass the confidence threshold
+        // Determine if we have mask data based on output shape and presence of protos
+        // Seg models have 38 columns (4 box + 1 score + 1 class + 32 weights)
+        let has_masks = protos.is_some() && preds_view.shape()[1] >= 38;
+
+        // 1. Extract candidates
         let mut candidates = Vec::new();
         for i in 0..preds_view.shape()[0] {
             let score = preds_view[[i, 4]];
             if score > confidence_threshold {
+                let mask_weights = if has_masks {
+                    preds_view.slice(s![i, 6..38]).to_owned()
+                } else {
+                    Array1::default(0)
+                };
+
                 candidates.push(Candidate {
                     bbox: ObjectBBox {
                         x1: preds_view[[i, 0]],
@@ -99,7 +110,7 @@ impl ObjectDetector {
                     },
                     score,
                     class_id: preds_view[[i, 5]] as usize,
-                    mask_weights: preds_view.slice(s![i, 6..38]).to_owned(),
+                    mask_weights,
                 });
             }
         }
@@ -114,10 +125,12 @@ impl ObjectDetector {
             .map(|idx| candidates[idx].clone())
             .collect();
 
-        // 3. Use unified finalization logic for coordinate scaling and mask generation
+        // 3. Finalize detections
+        let protos_view = protos.as_ref().map(|p| p.slice(s![0, .., .., ..]));
+
         Ok(finalize_detections(
             kept_candidates,
-            &protos_view,
+            protos_view.as_ref(),
             &meta,
             &self.vocabulary,
         ))
