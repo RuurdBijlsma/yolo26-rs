@@ -9,7 +9,7 @@ async fn main() -> color_eyre::Result<()> {
 
     // --- CONFIGURATION ---
     let model_path = "py-yolo/text_prompt/yoloe-26x-pure-clip.onnx";
-    let img_path = "assets/img/market.jpg";
+    let img_path = "assets/img/streetview2.png";
     let clip_model_id = "RuteNL/MobileCLIP2-B-OpenCLIP-ONNX";
 
     // Any custom labels you want to find in the image

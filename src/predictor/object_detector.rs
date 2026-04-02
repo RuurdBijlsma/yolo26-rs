@@ -1,23 +1,22 @@
 use crate::model_manager::{get_hf_model, HfModel};
 use crate::predictor::nms::non_maximum_suppression;
-use crate::predictor::processing::{ObjectBBox, ObjectDetection};
-use crate::predictor::{preprocess_image, reconstruct_mask};
+use crate::predictor::processing::{
+    finalize_detections, preprocess_image, Candidate, ObjectBBox, ObjectDetection,
+    YoloEngine,
+};
 use crate::ObjectDetectorError;
 use bon::bon;
-use image::{DynamicImage};
+use image::DynamicImage;
 use ndarray::s;
 use ort::ep::ExecutionProviderDispatch;
 use ort::session::{builder::GraphOptimizationLevel, Session};
 use ort::value::Value;
-use rayon::prelude::*;
 use std::{fs, path::Path};
 
 #[derive(Debug)]
 pub struct ObjectDetector {
-    pub session: Session,
+    engine: YoloEngine,
     vocabulary: Vec<String>,
-    image_size: u32,
-    stride: u32,
 }
 
 #[bon]
@@ -32,7 +31,6 @@ impl ObjectDetector {
         #[builder(default = &[])] with_execution_providers: &[ExecutionProviderDispatch],
     ) -> Result<Self, ObjectDetectorError> {
         let model_path = get_hf_model(model).await?;
-        // Ensure data file is downloaded (ORT expects it in the same directory)
         get_hf_model(data_model).await?;
         let vocab_path = get_hf_model(vocab_model).await?;
 
@@ -57,10 +55,12 @@ impl ObjectDetector {
         let vocabulary: Vec<String> = serde_json::from_str(&fs::read_to_string(vocab_path)?)?;
 
         Ok(Self {
-            session,
+            engine: YoloEngine {
+                session,
+                image_size: 640,
+                stride: 32,
+            },
             vocabulary,
-            image_size: 640,
-            stride: 32,
         })
     }
 
@@ -71,75 +71,55 @@ impl ObjectDetector {
         #[builder(default = 0.4)] confidence_threshold: f32,
         #[builder(default = 0.7)] intersection_over_curve: f32,
     ) -> Result<Vec<ObjectDetection>, ObjectDetectorError> {
-        let (input_tensor, meta) = preprocess_image(img, self.image_size, self.stride);
+        let (input_tensor, meta) =
+            preprocess_image(img, self.engine.image_size, self.engine.stride);
+
         let outputs = self
+            .engine
             .session
             .run(ort::inputs!["images" => Value::from_array(input_tensor)?])?;
 
         let preds = outputs["detections"].try_extract_array::<f32>()?;
         let protos = outputs["protos"].try_extract_array::<f32>()?;
 
-        let (preds_view, protos_view) =
-            (preds.slice(s![0, .., ..]), protos.slice(s![0, .., .., ..]));
+        let preds_view = preds.slice(s![0, .., ..]);
+        let protos_view = protos.slice(s![0, .., .., ..]);
 
-        let mut candidate_boxes = Vec::new();
-        let mut candidate_scores = Vec::new();
-        let mut candidate_data = Vec::new();
-
+        // 1. Extract candidates that pass the confidence threshold
+        let mut candidates = Vec::new();
         for i in 0..preds_view.shape()[0] {
             let score = preds_view[[i, 4]];
             if score > confidence_threshold {
-                candidate_boxes.push(ObjectBBox {
-                    x1: preds_view[[i, 0]],
-                    y1: preds_view[[i, 1]],
-                    x2: preds_view[[i, 2]],
-                    y2: preds_view[[i, 3]],
+                candidates.push(Candidate {
+                    bbox: ObjectBBox {
+                        x1: preds_view[[i, 0]],
+                        y1: preds_view[[i, 1]],
+                        x2: preds_view[[i, 2]],
+                        y2: preds_view[[i, 3]],
+                    },
+                    score,
+                    class_id: preds_view[[i, 5]] as usize,
+                    mask_weights: preds_view.slice(s![i, 6..38]).to_owned(),
                 });
-                candidate_scores.push(score);
-                candidate_data.push((
-                    preds_view[[i, 5]] as usize,
-                    preds_view.slice(s![i, 6..38]).to_owned(),
-                ));
             }
         }
 
-        let kept =
-            non_maximum_suppression(&candidate_boxes, &candidate_scores, intersection_over_curve);
+        // 2. Run Non-Maximum Suppression
+        let bboxes: Vec<_> = candidates.iter().map(|c| c.bbox).collect();
+        let scores: Vec<_> = candidates.iter().map(|c| c.score).collect();
+        let kept_indices = non_maximum_suppression(&bboxes, &scores, intersection_over_curve);
 
-        Ok(kept
-            .into_par_iter()
-            .map(|idx| {
-                let (class_id, weights) = &candidate_data[idx];
-                let raw_box = candidate_boxes[idx];
+        let kept_candidates: Vec<Candidate> = kept_indices
+            .into_iter()
+            .map(|idx| candidates[idx].clone())
+            .collect();
 
-                let final_bbox = ObjectBBox {
-                    x1: ((raw_box.x1 - meta.pad.0) / meta.ratio)
-                        .clamp(0.0, meta.orig_shape.0 as f32),
-                    y1: ((raw_box.y1 - meta.pad.1) / meta.ratio)
-                        .clamp(0.0, meta.orig_shape.1 as f32),
-                    x2: ((raw_box.x2 - meta.pad.0) / meta.ratio)
-                        .clamp(0.0, meta.orig_shape.0 as f32),
-                    y2: ((raw_box.y2 - meta.pad.1) / meta.ratio)
-                        .clamp(0.0, meta.orig_shape.1 as f32),
-                };
-
-                ObjectDetection {
-                    bbox: final_bbox,
-                    score: candidate_scores[idx],
-                    class_id: *class_id,
-                    tag: self
-                        .vocabulary
-                        .get(*class_id)
-                        .cloned()
-                        .unwrap_or_else(|| "unknown".into()),
-                    mask: Some(reconstruct_mask(
-                        &protos_view,
-                        weights,
-                        &meta,
-                        &final_bbox,
-                    )),
-                }
-            })
-            .collect())
+        // 3. Use unified finalization logic for coordinate scaling and mask generation
+        Ok(finalize_detections(
+            kept_candidates,
+            &protos_view,
+            &meta,
+            &self.vocabulary,
+        ))
     }
 }

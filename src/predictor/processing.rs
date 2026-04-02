@@ -1,6 +1,21 @@
 use image::{DynamicImage, GenericImageView};
 use ndarray::{Array1, Array2, Array4, Axis, s};
+use ort::session::Session;
 use rayon::prelude::*;
+
+#[derive(Debug, Clone)]
+pub struct Candidate {
+    pub bbox: ObjectBBox,
+    pub score: f32,
+    pub class_id: usize,
+    pub mask_weights: Array1<f32>,
+}
+#[derive(Debug)]
+pub struct YoloEngine {
+    pub session: Session,
+    pub image_size: u32,
+    pub stride: u32,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -206,4 +221,39 @@ pub fn reconstruct_mask(
         height: img_h,
         data,
     }
+}
+
+pub fn finalize_detections(
+    candidates: Vec<Candidate>,
+    protos_view: &ndarray::ArrayView3<f32>,
+    meta: &YoloPreprocessMeta,
+    labels: &[String],
+) -> Vec<ObjectDetection> {
+    candidates
+        .into_par_iter()
+        .map(|cand| {
+            let final_bbox = ObjectBBox {
+                x1: ((cand.bbox.x1 - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32),
+                y1: ((cand.bbox.y1 - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32),
+                x2: ((cand.bbox.x2 - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32),
+                y2: ((cand.bbox.y2 - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32),
+            };
+
+            ObjectDetection {
+                bbox: final_bbox,
+                score: cand.score,
+                class_id: cand.class_id,
+                tag: labels
+                    .get(cand.class_id)
+                    .cloned()
+                    .unwrap_or_else(|| "unknown".into()),
+                mask: Some(reconstruct_mask(
+                    protos_view,
+                    &cand.mask_weights,
+                    meta,
+                    &final_bbox,
+                )),
+            }
+        })
+        .collect()
 }

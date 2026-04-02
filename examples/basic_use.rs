@@ -5,7 +5,7 @@ use std::path::Path;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let image = Path::new("assets/img/market.jpg");
+    let image = Path::new("assets/img/fridge.jpg");
     let img = image::open(image)?;
 
     let mut predictor = ObjectDetector::from_hf().build().await?;

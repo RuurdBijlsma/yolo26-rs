@@ -1,24 +1,21 @@
+use crate::ObjectDetectorError;
 use crate::predictor::nms::non_maximum_suppression;
 use crate::predictor::processing::{
-    preprocess_image, reconstruct_mask, ObjectBBox, ObjectDetection,
+    Candidate, ObjectBBox, ObjectDetection, YoloEngine, finalize_detections, preprocess_image,
 };
-use crate::ObjectDetectorError;
 use bon::bon;
 use image::DynamicImage;
-use ndarray::{s, Axis, Ix2};
+use ndarray::{Axis, Ix2, s};
 use open_clip_inference::TextEmbedder;
 use ort::ep::ExecutionProviderDispatch;
-use ort::session::{builder::GraphOptimizationLevel, Session};
+use ort::session::{Session, builder::GraphOptimizationLevel};
 use ort::value::Value;
-use rayon::prelude::*;
 use std::path::Path;
 
 #[derive(Debug)]
 pub struct PromptableDetector {
-    pub session: Session,
+    engine: YoloEngine,
     pub text_embedder: TextEmbedder,
-    image_size: u32,
-    stride: u32,
 }
 
 #[bon]
@@ -36,10 +33,12 @@ impl PromptableDetector {
             .commit_from_file(model_path)?;
 
         Ok(Self {
-            session,
+            engine: YoloEngine {
+                session,
+                image_size: 640,
+                stride: 32,
+            },
             text_embedder,
-            image_size: 640,
-            stride: 32,
         })
     }
 
@@ -52,15 +51,18 @@ impl PromptableDetector {
         #[builder(default = 0.7)] intersection_over_union: f32,
     ) -> Result<Vec<ObjectDetection>, ObjectDetectorError> {
         // 1. Generate Text Embeddings
-        let text_embs = self.text_embedder.embed_texts(labels)
+        let text_embs = self
+            .text_embedder
+            .embed_texts(labels)
             .map_err(|e| ObjectDetectorError::Ort(format!("CLIP error: {e}")))?;
         let text_tensor = text_embs.insert_axis(Axis(0)); // [1, N, 512]
 
         // 2. Preprocess Image
-        let (img_tensor, meta) = preprocess_image(img, self.image_size, self.stride);
+        let (img_tensor, meta) =
+            preprocess_image(img, self.engine.image_size, self.engine.stride);
 
         // 3. Inference
-        let outputs = self.session.run(ort::inputs![
+        let outputs = self.engine.session.run(ort::inputs![
             "images" => Value::from_array(img_tensor)?,
             "text_embeddings" => Value::from_array(text_tensor)?
         ])?;
@@ -75,10 +77,9 @@ impl PromptableDetector {
             .reversed_axes();
 
         let num_classes = labels.len();
-        let mut candidate_boxes = Vec::new();
-        let mut candidate_scores = Vec::new();
-        let mut candidate_data = Vec::new();
+        let mut candidates = Vec::new();
 
+        // 4. Extract candidates
         for i in 0..preds_2d.shape()[0] {
             let row = preds_2d.row(i);
             let scores = row.slice(s![4..4 + num_classes]);
@@ -93,46 +94,41 @@ impl PromptableDetector {
             }
 
             if max_score > confidence_threshold {
-                candidate_boxes.push(ObjectBBox {
-                    x1: row[0] - row[2] / 2.0,
-                    y1: row[1] - row[3] / 2.0,
-                    x2: row[0] + row[2] / 2.0,
-                    y2: row[1] + row[3] / 2.0,
+                candidates.push(Candidate {
+                    bbox: ObjectBBox {
+                        x1: row[0] - row[2] / 2.0,
+                        y1: row[1] - row[3] / 2.0,
+                        x2: row[0] + row[2] / 2.0,
+                        y2: row[1] + row[3] / 2.0,
+                    },
+                    score: max_score,
+                    class_id: max_cls_id,
+                    mask_weights: row.slice(s![4 + num_classes..4 + num_classes + 32]).to_owned(),
                 });
-                candidate_scores.push(max_score);
-                candidate_data.push((
-                    max_cls_id,
-                    row.slice(s![4 + num_classes..4 + num_classes + 32]).to_owned(),
-                ));
             }
         }
 
-        // 4. NMS
-        let kept = non_maximum_suppression(&candidate_boxes, &candidate_scores, intersection_over_union);
+        // 5. NMS
+        let bboxes: Vec<_> = candidates.iter().map(|c| c.bbox).collect();
+        let scores: Vec<_> = candidates.iter().map(|c| c.score).collect();
+        let kept_indices = non_maximum_suppression(&bboxes, &scores, intersection_over_union);
+
+        let kept_candidates: Vec<Candidate> = kept_indices
+            .into_iter()
+            .map(|idx| candidates[idx].clone())
+            .collect();
+
         let protos_view = protos.slice(s![0, .., .., ..]);
 
-        // 5. Post-process coordinates and masks
-        Ok(kept
-            .into_par_iter()
-            .map(|idx| {
-                let (class_id, weights) = &candidate_data[idx];
-                let raw_box = candidate_boxes[idx];
+        // Convert slice labels to String for the shared finalizer
+        let label_strings: Vec<String> = labels.iter().map(|s| s.to_string()).collect();
 
-                let final_bbox = ObjectBBox {
-                    x1: ((raw_box.x1 - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32),
-                    y1: ((raw_box.y1 - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32),
-                    x2: ((raw_box.x2 - meta.pad.0) / meta.ratio).clamp(0.0, meta.orig_shape.0 as f32),
-                    y2: ((raw_box.y2 - meta.pad.1) / meta.ratio).clamp(0.0, meta.orig_shape.1 as f32),
-                };
-
-                ObjectDetection {
-                    bbox: final_bbox,
-                    score: candidate_scores[idx],
-                    class_id: *class_id,
-                    tag: labels[*class_id].to_string(),
-                    mask: Some(reconstruct_mask(&protos_view, weights, &meta, &final_bbox)),
-                }
-            })
-            .collect())
+        // 6. Use unified finalization logic
+        Ok(finalize_detections(
+            kept_candidates,
+            &protos_view,
+            &meta,
+            &label_strings,
+        ))
     }
 }
