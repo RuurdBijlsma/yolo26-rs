@@ -1,5 +1,5 @@
-use ndarray::{Array1, Array4, Axis, s, Array2};
 use image::{DynamicImage, GenericImageView};
+use ndarray::{Array1, Array2, Array4, Axis, s};
 use rayon::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -55,7 +55,11 @@ pub struct YoloPreprocessMeta {
     pub tensor_shape: (u32, u32),
 }
 
-pub fn preprocess_image(img: &DynamicImage, image_size: u32, stride: u32) -> (Array4<f32>, YoloPreprocessMeta) {
+pub fn preprocess_image(
+    img: &DynamicImage,
+    image_size: u32,
+    stride: u32,
+) -> (Array4<f32>, YoloPreprocessMeta) {
     let (w0, h0) = img.dimensions();
     let ratio = image_size as f32 / (w0.max(h0) as f32);
     let unpad_w = (w0 as f32 * ratio).round() as u32;
@@ -75,33 +79,57 @@ pub fn preprocess_image(img: &DynamicImage, image_size: u32, stride: u32) -> (Ar
     let scale_x = src_w as f32 / unpad_w as f32;
     let scale_y = src_h as f32 / unpad_h as f32;
 
-    let mut content_view = input.slice_mut(s![0, .., top as usize..(top + unpad_h) as usize, left as usize..(left + unpad_w) as usize]);
+    let mut content_view = input.slice_mut(s![
+        0,
+        ..,
+        top as usize..(top + unpad_h) as usize,
+        left as usize..(left + unpad_w) as usize
+    ]);
 
-    content_view.axis_iter_mut(Axis(1)).enumerate().par_bridge().for_each(|(y, mut row_channels)| {
-        let sy = (y as f32 + 0.5).mul_add(scale_y, -0.5);
-        let y1 = sy.floor() as i32;
-        let dy = sy - y1 as f32;
-        let y1_u = y1.clamp(0, src_h as i32 - 1) as u32;
-        let y2_u = (y1 + 1).clamp(0, src_h as i32 - 1) as u32;
-        let inv_dy = 1.0 - dy;
+    content_view
+        .axis_iter_mut(Axis(1))
+        .enumerate()
+        .par_bridge()
+        .for_each(|(y, mut row_channels)| {
+            let sy = (y as f32 + 0.5).mul_add(scale_y, -0.5);
+            let y1 = sy.floor() as i32;
+            let dy = sy - y1 as f32;
+            let y1_u = y1.clamp(0, src_h as i32 - 1) as u32;
+            let y2_u = (y1 + 1).clamp(0, src_h as i32 - 1) as u32;
+            let inv_dy = 1.0 - dy;
 
-        for x in 0..unpad_w {
-            let sx = (x as f32 + 0.5).mul_add(scale_x, -0.5);
-            let x1 = sx.floor() as i32;
-            let dx = sx - x1 as f32;
-            let x1_u = x1.clamp(0, src_w as i32 - 1) as u32;
-            let x2_u = (x1 + 1).clamp(0, src_w as i32 - 1) as u32;
-            let inv_dx = 1.0 - dx;
+            for x in 0..unpad_w {
+                let sx = (x as f32 + 0.5).mul_add(scale_x, -0.5);
+                let x1 = sx.floor() as i32;
+                let dx = sx - x1 as f32;
+                let x1_u = x1.clamp(0, src_w as i32 - 1) as u32;
+                let x2_u = (x1 + 1).clamp(0, src_w as i32 - 1) as u32;
+                let inv_delta_x = 1.0 - dx;
 
-            for c in 0..3 {
-                let get_p = |px, py| f32::from(src_raw[((py * src_w + px) as usize * 3) + c]);
-                let val = (get_p(x2_u, y2_u) * dx).mul_add(dy, (get_p(x1_u, y2_u) * inv_dx).mul_add(dy, (get_p(x1_u, y1_u) * inv_dx).mul_add(inv_dy, get_p(x2_u, y1_u) * dx * inv_dy)));
-                row_channels[[c, x as usize]] = (val + 0.5).floor() / 255.0;
+                for c in 0..3 {
+                    let get_p = |px, py| f32::from(src_raw[((py * src_w + px) as usize * 3) + c]);
+                    let val = (get_p(x2_u, y2_u) * dx).mul_add(
+                        dy,
+                        (get_p(x1_u, y2_u) * inv_delta_x).mul_add(
+                            dy,
+                            (get_p(x1_u, y1_u) * inv_delta_x)
+                                .mul_add(inv_dy, get_p(x2_u, y1_u) * dx * inv_dy),
+                        ),
+                    );
+                    row_channels[[c, x as usize]] = (val + 0.5).floor() / 255.0;
+                }
             }
-        }
-    });
+        });
 
-    (input, YoloPreprocessMeta { ratio, pad: (left as f32, top as f32), orig_shape: (w0, h0), tensor_shape: (w_pad, h_pad) })
+    (
+        input,
+        YoloPreprocessMeta {
+            ratio,
+            pad: (left as f32, top as f32),
+            orig_shape: (w0, h0),
+            tensor_shape: (w_pad, h_pad),
+        },
+    )
 }
 
 pub fn reconstruct_mask(
@@ -111,8 +139,14 @@ pub fn reconstruct_mask(
     bbox: &ObjectBBox,
 ) -> ObjectMask {
     let (mask_c, mask_h, mask_w) = protos.dim();
-    let protos_flat = protos.view().into_shape_with_order((mask_c, mask_h * mask_w)).unwrap();
-    let mask_logits = weights.dot(&protos_flat).into_shape_with_order((mask_h, mask_w)).unwrap();
+    let protos_flat = protos
+        .view()
+        .into_shape_with_order((mask_c, mask_h * mask_w))
+        .unwrap();
+    let mask_logits = weights
+        .dot(&protos_flat)
+        .into_shape_with_order((mask_h, mask_w))
+        .unwrap();
 
     let (img_w, img_h) = meta.orig_shape;
     let x_map_factor = meta.ratio * (mask_w as f32 / meta.tensor_shape.0 as f32);
