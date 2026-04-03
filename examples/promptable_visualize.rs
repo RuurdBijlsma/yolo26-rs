@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
     color_eyre::install()?;
 
     // --- CONFIGURATION ---
-    let model_path = "assets/model/promptable/yoloe-26l-det-promptable.onnx";
+    let model_path = "assets/model/promptable/yoloe-26x-seg-promptable.onnx";
     let clip_model_id = "RuteNL/MobileCLIP2-B-OpenCLIP-ONNX";
     let output_dir = Path::new("output/promptable_visualize");
     fs::create_dir_all(output_dir)?;
